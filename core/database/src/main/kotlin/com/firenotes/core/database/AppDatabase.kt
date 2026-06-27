@@ -3,7 +3,9 @@ package com.firenotes.core.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.firenotes.core.database.dao.MilitaryDao
 import com.firenotes.core.database.dao.OccurrenceDao
+import com.firenotes.core.database.dao.VehicleDao
 import com.firenotes.core.database.entity.*
 import com.firenotes.core.database.util.Converters
 
@@ -23,4 +25,6 @@ import com.firenotes.core.database.util.Converters
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract val occurrenceDao: OccurrenceDao
+    abstract val vehicleDao: VehicleDao
+    abstract val militaryDao: MilitaryDao
 }

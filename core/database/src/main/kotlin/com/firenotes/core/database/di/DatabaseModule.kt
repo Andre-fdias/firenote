@@ -3,9 +3,13 @@ package com.firenotes.core.database.di
 import android.content.Context
 import androidx.room.Room
 import com.firenotes.core.common.domain.repository.OccurrenceRepository
+import com.firenotes.core.common.domain.repository.VehicleRepository
 import com.firenotes.core.database.AppDatabase
+import com.firenotes.core.database.dao.MilitaryDao
 import com.firenotes.core.database.dao.OccurrenceDao
+import com.firenotes.core.database.dao.VehicleDao
 import com.firenotes.core.database.repository.OccurrenceRepositoryImpl
+import com.firenotes.core.database.repository.VehicleRepositoryImpl
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -23,6 +27,12 @@ abstract class DatabaseModule {
     abstract fun bindOccurrenceRepository(
         impl: OccurrenceRepositoryImpl
     ): OccurrenceRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindVehicleRepository(
+        impl: VehicleRepositoryImpl
+    ): VehicleRepository
 
     companion object {
         
@@ -46,6 +56,22 @@ abstract class DatabaseModule {
             database: AppDatabase
         ): OccurrenceDao {
             return database.occurrenceDao
+        }
+
+        @Provides
+        @Singleton
+        fun provideVehicleDao(
+            database: AppDatabase
+        ): VehicleDao {
+            return database.vehicleDao
+        }
+
+        @Provides
+        @Singleton
+        fun provideMilitaryDao(
+            database: AppDatabase
+        ): MilitaryDao {
+            return database.militaryDao
         }
     }
 }

@@ -15,4 +15,17 @@ sealed class Screen(val route: String) {
     data object Search : Screen("search")
     data object Settings : Screen("settings")
     data object Backup : Screen("backup")
+    
+    // Rotas de Viaturas
+    data object OccurrenceVehicles : Screen("occurrence_vehicles/{occurrenceId}") {
+        fun createRoute(occurrenceId: String) = "occurrence_vehicles/$occurrenceId"
+    }
+    data object VehicleForm : Screen("vehicle_form/{occurrenceId}/{vehicleId}") {
+        fun createRoute(occurrenceId: String, vehicleId: String) = "vehicle_form/$occurrenceId/$vehicleId"
+    }
+    
+    // Rotas de Militares
+    data object VehicleMilitary : Screen("vehicle_military/{vehicleId}") {
+        fun createRoute(vehicleId: String) = "vehicle_military/$vehicleId"
+    }
 }
