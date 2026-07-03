@@ -63,7 +63,9 @@ fun FireOutlinedTextField(
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     enabled: Boolean = true,
+    readOnly: Boolean = false,
     error: Boolean = false,
+    placeholder: @Composable (() -> Unit)? = null,
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
@@ -83,7 +85,9 @@ fun FireOutlinedTextField(
         modifier = modifier.fillMaxWidth(),
         singleLine = singleLine,
         enabled = enabled,
+        readOnly = readOnly,
         isError = error,
+        placeholder = placeholder,
         leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
         visualTransformation = visualTransformation,
@@ -310,4 +314,99 @@ fun FireFilterChip(
         shape = FireShapes.Small,
         modifier = modifier
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FireSearchableDropdown(
+    selectedOption: String,
+    options: List<String>,
+    onOptionSelected: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    optionIcons: Map<String, String> = emptyMap(),
+    placeholder: String = "Pesquisar..."
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    
+    val filteredOptions = remember(searchQuery, options) {
+        if (searchQuery.isBlank()) {
+            options
+        } else {
+            options.filter { it.contains(searchQuery, ignoreCase = true) }
+        }
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier
+    ) {
+        FireOutlinedTextField(
+            value = selectedOption,
+            onValueChange = {},
+            label = label,
+            readOnly = true,
+            leadingIcon = optionIcons[selectedOption]?.let { emoji ->
+                { Text(emoji, modifier = Modifier.padding(start = 12.dp), style = FireTypography.Title) }
+            },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { 
+                expanded = false
+                searchQuery = ""
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text(placeholder, style = FireTypography.Body) },
+                leadingIcon = { Icon(imageVector = FireIcons.Search, contentDescription = "Buscar") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(FireSpacing.Small)
+            )
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall))
+
+            if (filteredOptions.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("Nenhum resultado encontrado", style = FireTypography.Body) },
+                    onClick = {},
+                    enabled = false
+                )
+            } else {
+                filteredOptions.forEach { option ->
+                    val emoji = optionIcons[option]
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                if (emoji != null) {
+                                    Text(emoji, style = FireTypography.Title)
+                                    Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                }
+                                Text(text = option, style = FireTypography.Body)
+                            }
+                        },
+                        onClick = {
+                            onOptionSelected(option)
+                            expanded = false
+                            searchQuery = ""
+                        }
+                    )
+                }
+            }
+        }
+    }
 }

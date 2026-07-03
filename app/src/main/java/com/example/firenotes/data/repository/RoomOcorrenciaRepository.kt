@@ -65,8 +65,9 @@ class RoomOcorrenciaRepository @Inject constructor(
         )
         ocorrenciaDao.insertOcorrencia(roomOcorrencia)
 
+        val existingAddr = ocorrenciaDao.getEnderecoForOcorrencia(id)
         val roomEndereco = RoomEndereco(
-            id = UUID.randomUUID().toString(),
+            id = existingAddr?.id ?: UUID.randomUUID().toString(),
             ocorrenciaId = id,
             rua = ocorrencia.rua,
             numero = ocorrencia.numero,

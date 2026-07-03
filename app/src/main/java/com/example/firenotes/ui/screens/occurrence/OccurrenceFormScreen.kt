@@ -87,6 +87,8 @@ fun OccurrenceFormScreen(
     
     // Pickers and Launchers
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var activeOcrScanType by remember { mutableStateOf("") } // "DOCUMENTO" or "CRLV"
 
@@ -101,6 +103,26 @@ fun OccurrenceFormScreen(
         val coarseGranted = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
         if (fineGranted || coarseGranted) {
             viewModel.captureLocationAndAddress()
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { errorMsg ->
+            if (errorMsg.contains("GPS") || errorMsg.contains("Erro")) {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Não foi possível obter sua localização.",
+                    actionLabel = "Tentar novamente",
+                    duration = SnackbarDuration.Long
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    locationPermissionLauncher.launch(
+                        arrayOf(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -199,6 +221,7 @@ fun OccurrenceFormScreen(
                 }
             )
         },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         floatingActionButton = {
             // Contextual FAB depending on active module
             if (activeModule != null) {
@@ -269,155 +292,206 @@ fun OccurrenceFormScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .padding(FireSpacing.Medium),
-                        verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
+                            .padding(horizontal = FireSpacing.MediumLarge, vertical = FireSpacing.Large),
+                        verticalArrangement = Arrangement.spacedBy(FireSpacing.MediumLarge)
                     ) {
                         FireSectionHeader(
-                            title = "Dados Iniciais do Talão",
+                            title = "Dados Iniciais da Ocorrência",
                             icon = "📋📋",
                             subtitle = "Identifique o atendimento para iniciar o dashboard modular."
                         )
 
-                        FireOutlinedTextField(
-                            value = uiState.protocolo,
-                            onValueChange = { viewModel.updateInitialFields(it, uiState.data, uiState.hora) },
-                            label = "Número do Talão da Ocorrência"
-                        )
-
-                        Row(
+                        // CARD 1: Identificação da Ocorrência
+                        FireCard(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
+                            elevation = 2.dp,
+                            containerColor = FireColors.Surface
                         ) {
-                            FireOutlinedTextField(
-                                value = uiState.data,
-                                onValueChange = { viewModel.updateInitialFields(uiState.protocolo, it, uiState.hora) },
-                                label = "Data",
-                                modifier = Modifier.weight(1f)
-                            )
-                            FireOutlinedTextField(
-                                value = uiState.hora,
-                                onValueChange = { viewModel.updateInitialFields(uiState.protocolo, uiState.data, it) },
-                                label = "Hora",
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        // Natureza Selection Dropdown
-                        Text("Natureza do Acidente:", style = FireTypography.LabelLarge, fontWeight = FontWeight.Bold)
-                        var expandedNatureDropdown by remember { mutableStateOf(false) }
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            FireOutlinedButton(
-                                text = selectedNaturezaForCreation.descricao,
-                                onClick = { expandedNatureDropdown = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                icon = FireIcons.ArrowDropDown
-                            )
-                            DropdownMenu(
-                                expanded = expandedNatureDropdown,
-                                onDismissRequest = { expandedNatureDropdown = false }
+                            Column(
+                                modifier = Modifier.padding(FireSpacing.Medium),
+                                verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
                             ) {
-                                NaturezaOcorrencia.entries.forEach { nat ->
-                                    DropdownMenuItem(
-                                        text = { Text(nat.descricao, style = FireTypography.BodyMedium) },
-                                        onClick = {
-                                            selectedNaturezaForCreation = nat
-                                            expandedNatureDropdown = false
-                                        }
+                                Text(
+                                    text = "Identificação do Registro",
+                                    style = FireTypography.Title,
+                                    fontWeight = FontWeight.Bold,
+                                    color = FireColors.Primary
+                                )
+
+                                FireOutlinedTextField(
+                                    value = uiState.protocolo,
+                                    onValueChange = { viewModel.updateInitialFields(it, uiState.data, uiState.hora) },
+                                    label = "Número do Talão da Ocorrência",
+                                    placeholder = { Text("Ex: 2026-A12", style = FireTypography.BodyMedium) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = FireIcons.AddAlert,
+                                            contentDescription = "Número do Talão",
+                                            tint = FireColors.Primary
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
+                                ) {
+                                    FireDatePicker(
+                                        value = uiState.data,
+                                        onDateSelected = { viewModel.updateInitialFields(uiState.protocolo, it, uiState.hora) },
+                                        label = "Data",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    FireTimePicker(
+                                        value = uiState.hora,
+                                        onTimeSelected = { viewModel.updateInitialFields(uiState.protocolo, uiState.data, it) },
+                                        label = "Hora",
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
                             }
                         }
 
-                        FireDivider()
-
-                        Text("Forma de Inserção de Endereço", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                        Row(
+                        // CARD 2: Localização
+                        FireCard(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(FireSpacing.Large)
+                            elevation = 2.dp,
+                            containerColor = FireColors.Surface
                         ) {
-                            FireRadioButton(
-                                selected = !isGpsMethod,
-                                onClick = { isGpsMethod = false },
-                                label = "Manual"
-                            )
-                            FireRadioButton(
-                                selected = isGpsMethod,
-                                onClick = { isGpsMethod = true },
-                                label = "GPS"
-                            )
+                            Column(
+                                modifier = Modifier.padding(FireSpacing.Medium),
+                                verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
+                            ) {
+                                Text(
+                                    text = "Localização Geográfica",
+                                    style = FireTypography.Title,
+                                    fontWeight = FontWeight.Bold,
+                                    color = FireColors.Primary
+                                )
+
+                                FireButton(
+                                    text = "Capturar Localização",
+                                    onClick = {
+                                        locationPermissionLauncher.launch(
+                                            arrayOf(
+                                                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                                android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                            )
+                                        )
+                                    },
+                                    containerColor = FireColors.Secondary,
+                                    icon = FireIcons.LocationOn,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                if (uiState.isGpsLoading) {
+                                    FireLoading()
+                                }
+
+                                if (uiState.latitude != null) {
+                                    Text(
+                                        text = "Coordenadas: Lat ${"%.5f".format(uiState.latitude)} | Lng ${"%.5f".format(uiState.longitude)}",
+                                        style = FireTypography.LabelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = FireColors.Secondary
+                                    )
+                                }
+
+                                FireOutlinedTextField(
+                                    value = uiState.rua,
+                                    onValueChange = { viewModel.updateManualAddress(it, uiState.numero, uiState.bairro, uiState.cidade, uiState.uf) },
+                                    label = "Rua/Avenida"
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
+                                ) {
+                                    FireOutlinedTextField(
+                                        value = uiState.numero,
+                                        onValueChange = { viewModel.updateManualAddress(uiState.rua, it, uiState.bairro, uiState.cidade, uiState.uf) },
+                                        label = "Número",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    FireOutlinedTextField(
+                                        value = uiState.bairro,
+                                        onValueChange = { viewModel.updateManualAddress(uiState.rua, uiState.numero, it, uiState.cidade, uiState.uf) },
+                                        label = "Bairro",
+                                        modifier = Modifier.weight(2f)
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
+                                ) {
+                                    FireOutlinedTextField(
+                                        value = uiState.cidade,
+                                        onValueChange = { viewModel.updateManualAddress(uiState.rua, uiState.numero, uiState.bairro, it, uiState.uf) },
+                                        label = "Cidade",
+                                        modifier = Modifier.weight(3f)
+                                    )
+                                    
+                                    val listUFs = remember {
+                                        listOf(
+                                            "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", 
+                                            "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", 
+                                            "RS", "RO", "RR", "SC", "SP", "SE", "TO"
+                                        )
+                                    }
+                                    FireDropdown(
+                                        selectedOption = uiState.uf,
+                                        options = listUFs,
+                                        onOptionSelected = { viewModel.updateManualAddress(uiState.rua, uiState.numero, uiState.bairro, uiState.cidade, it) },
+                                        label = "UF",
+                                        modifier = Modifier.weight(2f)
+                                    )
+                                }
+                            }
                         }
 
-                        if (isGpsMethod) {
-                            FireButton(
-                                text = "Capturar GPS",
-                                onClick = {
-                                    locationPermissionLauncher.launch(
-                                        arrayOf(
-                                            android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                            android.Manifest.permission.ACCESS_COARSE_LOCATION
-                                        )
-                                    )
-                                },
-                                containerColor = FireColors.Secondary,
-                                icon = FireIcons.LocationOn,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            if (uiState.isGpsLoading) {
-                                FireLoading()
-                            }
-                            if (uiState.latitude != null) {
+                        // CARD 3: Natureza
+                        FireCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = 2.dp,
+                            containerColor = FireColors.Surface
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(FireSpacing.Medium),
+                                verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
+                            ) {
                                 Text(
-                                    text = "Coordenadas: Lat ${"%.5f".format(uiState.latitude)} | Lng ${"%.5f".format(uiState.longitude)}",
-                                    style = FireTypography.LabelMedium,
+                                    text = "Classificação da Ocorrência",
+                                    style = FireTypography.Title,
                                     fontWeight = FontWeight.Bold,
-                                    color = FireColors.Secondary
+                                    color = FireColors.Primary
+                                )
+
+                                val natureOptions = remember {
+                                    NaturezaOcorrencia.entries.map { it.descricao }
+                                }
+                                val natureIcons = remember {
+                                    mapOf(
+                                        NaturezaOcorrencia.INCENDIO.descricao to "🔥🔥",
+                                        NaturezaOcorrencia.PESSOAL.descricao to "🚑🚑",
+                                        NaturezaOcorrencia.SALVAMENTO.descricao to "🚒🚒",
+                                        NaturezaOcorrencia.QUEDA.descricao to "🌳🌳",
+                                        NaturezaOcorrencia.ACIDENTE_TRANSITO.descricao to "🚗🚗"
+                                    )
+                                }
+
+                                FireSearchableDropdown(
+                                    selectedOption = selectedNaturezaForCreation.descricao,
+                                    options = natureOptions,
+                                    onOptionSelected = { desc ->
+                                        selectedNaturezaForCreation = NaturezaOcorrencia.entries.first { it.descricao == desc }
+                                    },
+                                    label = "Natureza do Acidente",
+                                    optionIcons = natureIcons,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                        }
-
-                        // Address Form Fields
-                        FireOutlinedTextField(
-                            value = uiState.rua,
-                            onValueChange = { viewModel.updateManualAddress(it, uiState.numero, uiState.bairro, uiState.cidade, uiState.uf) },
-                            label = "Rua/Avenida"
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
-                        ) {
-                            FireOutlinedTextField(
-                                value = uiState.numero,
-                                onValueChange = { viewModel.updateManualAddress(uiState.rua, it, uiState.bairro, uiState.cidade, uiState.uf) },
-                                label = "Número",
-                                modifier = Modifier.weight(1f)
-                            )
-                            FireOutlinedTextField(
-                                value = uiState.bairro,
-                                onValueChange = { viewModel.updateManualAddress(uiState.rua, uiState.numero, it, uiState.cidade, uiState.uf) },
-                                label = "Bairro",
-                                modifier = Modifier.weight(2f)
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
-                        ) {
-                            FireOutlinedTextField(
-                                value = uiState.cidade,
-                                onValueChange = { viewModel.updateManualAddress(uiState.rua, uiState.numero, uiState.bairro, it, uiState.uf) },
-                                label = "Cidade",
-                                modifier = Modifier.weight(3f)
-                            )
-                            FireOutlinedTextField(
-                                value = uiState.uf,
-                                onValueChange = { viewModel.updateManualAddress(uiState.rua, uiState.numero, uiState.bairro, uiState.cidade, it) },
-                                label = "UF",
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        uiState.errorMessage?.let {
-                            Text(it, style = FireTypography.BodyMedium, color = FireColors.Error, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(FireSpacing.Medium))
@@ -471,8 +545,6 @@ fun OccurrenceFormScreen(
                                                     )
                                                 )
                                             },
-                                            isGpsMethod = isGpsMethod,
-                                            onGpsMethodToggle = { isGpsMethod = it },
                                             onBack = autoSaveAndCloseModule
                                         )
                                     }
@@ -969,8 +1041,6 @@ private fun AddressModuleView(
     uiState: OccurrenceFormUiState,
     onAddressChanged: (String, String, String, String, String) -> Unit,
     onFetchGps: () -> Unit,
-    isGpsMethod: Boolean,
-    onGpsMethodToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -982,28 +1052,25 @@ private fun AddressModuleView(
     ) {
         FireSectionHeader(title = "Localização da Ocorrência", icon = "📍📍")
         
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(FireSpacing.Large)
-        ) {
-            FireRadioButton(selected = !isGpsMethod, onClick = { onGpsMethodToggle(false) }, label = "Inserção Manual")
-            FireRadioButton(selected = isGpsMethod, onClick = { onGpsMethodToggle(true) }, label = "GPS")
+        FireButton(
+            text = "Capturar Localização",
+            onClick = onFetchGps,
+            containerColor = FireColors.Secondary,
+            icon = FireIcons.LocationOn,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (uiState.isGpsLoading) {
+            FireLoading()
         }
 
-        if (isGpsMethod) {
-            FireButton(
-                text = "Capturar GPS",
-                onClick = onFetchGps,
-                containerColor = FireColors.Secondary,
-                icon = FireIcons.LocationOn,
-                modifier = Modifier.fillMaxWidth()
+        if (uiState.latitude != null) {
+            Text(
+                text = "Coordenadas: Lat ${"%.5f".format(uiState.latitude)} | Lng ${"%.5f".format(uiState.longitude)}",
+                style = FireTypography.LabelMedium,
+                color = FireColors.Secondary,
+                fontWeight = FontWeight.Bold
             )
-            if (uiState.isGpsLoading) {
-                FireLoading()
-            }
-            if (uiState.latitude != null) {
-                Text("Coordenadas: Lat ${uiState.latitude} | Lng ${uiState.longitude}", style = FireTypography.LabelMedium, color = FireColors.Secondary)
-            }
         }
 
         FireOutlinedTextField(
@@ -1032,11 +1099,19 @@ private fun AddressModuleView(
                 label = "Cidade",
                 modifier = Modifier.weight(3f)
             )
-            FireOutlinedTextField(
-                value = uiState.uf,
-                onValueChange = { onAddressChanged(uiState.rua, uiState.numero, uiState.bairro, uiState.cidade, it) },
+            val listUFs = remember {
+                listOf(
+                    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", 
+                    "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", 
+                    "RS", "RO", "RR", "SC", "SP", "SE", "TO"
+                )
+            }
+            FireDropdown(
+                selectedOption = uiState.uf,
+                options = listUFs,
+                onOptionSelected = { onAddressChanged(uiState.rua, uiState.numero, uiState.bairro, uiState.cidade, it) },
                 label = "UF",
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(2f)
             )
         }
 
