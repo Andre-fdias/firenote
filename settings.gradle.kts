@@ -1,6 +1,12 @@
 pluginManagement {
     repositories {
-        google()
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -14,28 +20,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Fire Notes"
-
-// Módulo principal do app
 include(":app")
-
-// Módulos Core (reutilizáveis e de infraestrutura)
-include(":core:common")
-include(":core:database")
-include(":core:drive")
-include(":core:ocr")
-include(":core:camera")
-include(":core:location")
-include(":core:network")
-
-// Módulos de Feature (funcionalidades específicas do app)
-include(":features:dashboard")
-include(":features:login")
-include(":features:occurrence")
-include(":features:vehicles")
-include(":features:military")
-include(":features:people")
-include(":features:documents")
-include(":features:photos")
-include(":features:settings")
-include(":features:search")
-include(":features:backup")
+ 
