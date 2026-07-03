@@ -4,6 +4,8 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.firenotes.ui.designsystem.colors.FireColor
@@ -405,6 +408,217 @@ fun FireSearchableDropdown(
                             searchQuery = ""
                         }
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FireSearchableDropdownPremium(
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    categories: Map<String, List<String>>,
+    favorites: List<String> = emptyList(),
+    recents: List<String> = emptyList(),
+    optionIcons: Map<String, String> = emptyMap(),
+    placeholder: String = "Pesquisar natureza..."
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val allOptions = remember(categories) {
+        categories.values.flatten()
+    }
+
+    val filteredOptions = remember(searchQuery, categories) {
+        if (searchQuery.isBlank()) {
+            emptyList()
+        } else {
+            allOptions.filter { option ->
+                option.contains(searchQuery, ignoreCase = true) ||
+                categories.entries.any { entry ->
+                    entry.value.contains(option) && entry.key.contains(searchQuery, ignoreCase = true)
+                }
+            }
+        }
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier
+    ) {
+        FireOutlinedTextField(
+            value = selectedOption,
+            onValueChange = {},
+            label = label,
+            readOnly = true,
+            leadingIcon = optionIcons[selectedOption]?.let { emoji ->
+                { Text(emoji, modifier = Modifier.padding(start = 12.dp), style = FireTypography.Title) }
+            },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = {
+                expanded = false
+                searchQuery = ""
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 400.dp)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text(placeholder, style = FireTypography.Body) },
+                leadingIcon = { Icon(imageVector = FireIcons.Search, contentDescription = "Buscar") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(FireSpacing.Small)
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall))
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+            ) {
+                if (searchQuery.isNotBlank()) {
+                    if (filteredOptions.isEmpty()) {
+                        item {
+                            DropdownMenuItem(
+                                text = { Text("Nenhum resultado encontrado", style = FireTypography.Body) },
+                                onClick = {},
+                                enabled = false
+                            )
+                        }
+                    } else {
+                        items(filteredOptions) { option ->
+                            val emoji = optionIcons[option]
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        if (emoji != null) {
+                                            Text(emoji, style = FireTypography.Title)
+                                            Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                        }
+                                        Text(text = option, style = FireTypography.Body)
+                                    }
+                                },
+                                onClick = {
+                                    onOptionSelected(option)
+                                    expanded = false
+                                    searchQuery = ""
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    if (favorites.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "⭐ NATUREZAS MAIS UTILIZADAS",
+                                style = FireTypography.LabelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = FireColors.Primary,
+                                modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
+                            )
+                        }
+                        items(favorites) { option ->
+                            val emoji = optionIcons[option]
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        if (emoji != null) {
+                                            Text(emoji, style = FireTypography.Title)
+                                            Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                        }
+                                        Text(text = option, style = FireTypography.Body)
+                                    }
+                                },
+                                onClick = {
+                                    onOptionSelected(option)
+                                    expanded = false
+                                }
+                            )
+                        }
+                        item { HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall)) }
+                    }
+
+                    if (recents.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "🕒 ÚLTIMAS UTILIZADAS",
+                                style = FireTypography.LabelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = FireColors.OnSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
+                            )
+                        }
+                        items(recents) { option ->
+                            val emoji = optionIcons[option]
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        if (emoji != null) {
+                                            Text(emoji, style = FireTypography.Title)
+                                            Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                        }
+                                        Text(text = option, style = FireTypography.Body)
+                                    }
+                                },
+                                onClick = {
+                                    onOptionSelected(option)
+                                    expanded = false
+                                }
+                            )
+                        }
+                        item { HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall)) }
+                    }
+
+                    categories.forEach { (category, optionsList) ->
+                        item {
+                            Text(
+                                text = category,
+                                style = FireTypography.LabelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = FireColors.Primary,
+                                modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
+                            )
+                        }
+                        items(optionsList) { option ->
+                            val emoji = optionIcons[option]
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        if (emoji != null) {
+                                            Text(emoji, style = FireTypography.Title)
+                                            Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                        }
+                                        Text(text = option, style = FireTypography.Body)
+                                    }
+                                },
+                                onClick = {
+                                    onOptionSelected(option)
+                                    expanded = false
+                                }
+                            )
+                        }
+                        item { HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall)) }
+                    }
                 }
             }
         }

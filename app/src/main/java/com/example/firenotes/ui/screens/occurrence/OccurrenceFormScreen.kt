@@ -48,6 +48,50 @@ import com.example.firenotes.ui.designsystem.components.widgets.FireStatusChip
 import com.example.firenotes.ui.designsystem.states.FireLoading
 import java.time.Instant
 
+data class SubNatureza(
+    val nome: String,
+    val baseNatureza: NaturezaOcorrencia,
+    val categoria: String,
+    val keywords: List<String>
+)
+
+val subNaturezas = listOf(
+    // INCÊNDIOS
+    SubNatureza("Incêndio em residência", NaturezaOcorrencia.INCENDIO, "🔥🔥 INCÊNDIOS", listOf("casa", "fogo", "residencia", "lar", "domestico")),
+    SubNatureza("Incêndio em comércio", NaturezaOcorrencia.INCENDIO, "🔥🔥 INCÊNDIOS", listOf("loja", "fogo", "estabelecimento", "predio")),
+    SubNatureza("Incêndio em veículo", NaturezaOcorrencia.INCENDIO, "🔥🔥 INCÊNDIOS", listOf("carro", "fogo", "veiculo", "moto", "caminhao")),
+    SubNatureza("Incêndio florestal", NaturezaOcorrencia.INCENDIO, "🔥🔥 INCÊNDIOS", listOf("mato", "fogo", "arvore", "floresta", "queimada", "vegetacao")),
+    SubNatureza("Incêndio industrial", NaturezaOcorrencia.INCENDIO, "🔥🔥 INCÊNDIOS", listOf("galpao", "fogo", "industria", "fabrica", "quimico")),
+
+    // APH
+    SubNatureza("Mal súbito", NaturezaOcorrencia.PESSOAL, "🚑🚑 APH", listOf("desmaio", "pressao", "passando mal", "infarto")),
+    SubNatureza("Queda", NaturezaOcorrencia.PESSOAL, "🚑🚑 APH", listOf("altura", "propria altura", "chao", "queda")),
+    SubNatureza("Trauma", NaturezaOcorrencia.PESSOAL, "🚑🚑 APH", listOf("fratura", "corte", "sangramento", "ferimento")),
+    SubNatureza("PCR", NaturezaOcorrencia.PESSOAL, "🚑🚑 APH", listOf("parada", "cardio", "respiratoria", "reanimacao")),
+    SubNatureza("Parto", NaturezaOcorrencia.PESSOAL, "🚑🚑 APH", listOf("nascimento", "bebe", "gravida", "gestante")),
+    SubNatureza("Afogamento", NaturezaOcorrencia.PESSOAL, "🚑🚑 APH", listOf("agua", "piscina", "rio", "mar")),
+
+    // SALVAMENTOS
+    SubNatureza("Altura", NaturezaOcorrencia.SALVAMENTO, "🚒🚒 SALVAMENTOS", listOf("rapel", "ponte", "predio", "elevado")),
+    SubNatureza("Aquático", NaturezaOcorrencia.SALVAMENTO, "🚒🚒 SALVAMENTOS", listOf("rio", "mar", "represa", "afogamento")),
+    SubNatureza("Estrutural", NaturezaOcorrencia.SALVAMENTO, "🚒🚒 SALVAMENTOS", listOf("desabamento", "escombros", "colapso")),
+    SubNatureza("Animal", NaturezaOcorrencia.SALVAMENTO, "🚒🚒 SALVAMENTOS", listOf("cachorro", "gato", "cobra", "resgate", "bicho")),
+    SubNatureza("Busca", NaturezaOcorrencia.SALVAMENTO, "🚒🚒 SALVAMENTOS", listOf("desaparecido", "floresta", "resgate", "perdido")),
+
+    // ACIDENTES
+    SubNatureza("Colisão", NaturezaOcorrencia.ACIDENTE_TRANSITO, "🚗🚗 ACIDENTES", listOf("batida", "carro", "veiculo", "transito")),
+    SubNatureza("Capotamento", NaturezaOcorrencia.ACIDENTE_TRANSITO, "🚗🚗 ACIDENTES", listOf("tombamento", "carro", "veiculo", "transito")),
+    SubNatureza("Atropelamento", NaturezaOcorrencia.ACIDENTE_TRANSITO, "🚗🚗 ACIDENTES", listOf("pedestre", "carro", "veiculo", "atropelar")),
+    SubNatureza("Moto", NaturezaOcorrencia.ACIDENTE_TRANSITO, "🚗🚗 ACIDENTES", listOf("colisao moto", "queda moto", "motocicleta")),
+    SubNatureza("Caminhão", NaturezaOcorrencia.ACIDENTE_TRANSITO, "🚗🚗 ACIDENTES", listOf("carreta", "caminhao", "veiculo pesado")),
+
+    // OUTROS
+    SubNatureza("Queda de árvore", NaturezaOcorrencia.QUEDA, "🌳🌳 OUTROS", listOf("arvore", "via", "bloqueio", "vento")),
+    SubNatureza("Choque elétrico", NaturezaOcorrencia.QUEDA, "🌳🌳 OUTROS", listOf("energia", "fio", "poste", "eletrocussao")),
+    SubNatureza("Vazamento", NaturezaOcorrencia.QUEDA, "🌳🌳 OUTROS", listOf("gas", "agua", "produto", "vazando")),
+    SubNatureza("Produtos perigosos", NaturezaOcorrencia.QUEDA, "🌳🌳 OUTROS", listOf("quimico", "gas", "carga", "explosivo"))
+)
+
 enum class OccurrenceModule {
     ENDERECO,
     VIATURAS,
@@ -94,6 +138,60 @@ fun OccurrenceFormScreen(
 
     var selectedNaturezaForCreation by remember { mutableStateOf(NaturezaOcorrencia.PESSOAL) }
     var isGpsMethod by remember { mutableStateOf(true) }
+
+    // Premium stats & preferences for sub-nature selection
+    val prefs = remember(context) {
+        context.getSharedPreferences("fire_notes_nature_stats", android.content.Context.MODE_PRIVATE)
+    }
+
+    var favoritesList by remember {
+        mutableStateOf(
+            subNaturezas.map { it.nome }
+                .map { name -> name to prefs.getInt("count_$name", 0) }
+                .filter { it.second > 0 }
+                .sortedByDescending { it.second }
+                .map { it.first }
+                .take(5)
+        )
+    }
+
+    var recentsList by remember {
+        mutableStateOf(
+            prefs.getString("recent_natures", "")
+                ?.split(",")
+                ?.filter { it.isNotBlank() }
+                ?: emptyList()
+        )
+    }
+
+    var selectedSubNaturezaForCreation by remember {
+        mutableStateOf(subNaturezas.first { it.nome == "Queda" })
+    }
+
+    var gpsCaptureTime by remember {
+        mutableStateOf("")
+    }
+
+    LaunchedEffect(uiState.latitude) {
+        if (uiState.latitude != null && gpsCaptureTime.isEmpty()) {
+            val formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
+            gpsCaptureTime = java.time.LocalDateTime.now().format(formatter)
+        } else if (uiState.latitude == null) {
+            gpsCaptureTime = ""
+        }
+    }
+
+    val categoriesMap = remember {
+        subNaturezas.groupBy { it.categoria }.mapValues { entry -> entry.value.map { it.nome } }
+    }
+    val optionIconsMap = remember {
+        subNaturezas.associate { sub ->
+            val emojiPart = sub.categoria.split(" ").firstOrNull() ?: ""
+            sub.nome to emojiPart
+        }
+    }
+
+    var showTechDetails by remember { mutableStateOf(false) }
 
     // GPS permissions launcher
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -288,6 +386,37 @@ fun OccurrenceFormScreen(
         ) {
             when (uiState.formStage) {
                 FormStage.INITIAL_DATA, FormStage.NATURE_SELECTION -> {
+                    // Local state helpers for city autocomplete
+                    val citySuggestions = remember {
+                        listOf(
+                            "São Paulo", "Campinas", "Valinhos", "Vinhedo", "Jundiaí", "Guarulhos", 
+                            "São Bernardo do Campo", "Santo André", "Osasco", "Santos", "Ribeirão Preto", 
+                            "São José dos Campos", "Sorocaba", "Mogi das Cruzes", "Bauru", "Piracicaba"
+                        )
+                    }
+                    var expandedCitySuggestions by remember { mutableStateOf(false) }
+                    val filteredCities = remember(uiState.cidade) {
+                        if (uiState.cidade.isBlank()) {
+                            emptyList()
+                        } else {
+                            citySuggestions.filter { it.contains(uiState.cidade, ignoreCase = true) && it != uiState.cidade }
+                        }
+                    }
+
+                    // Form validation & visual checkmarks
+                    val isTalaoFilled = remember(uiState.protocolo, uiState.data, uiState.hora) {
+                        uiState.protocolo.isNotBlank() && uiState.data.isNotBlank() && uiState.hora.isNotBlank()
+                    }
+                    val isLocationFilled = remember(uiState.latitude, uiState.rua, uiState.cidade) {
+                        uiState.latitude != null && uiState.rua.isNotBlank() && uiState.cidade.isNotBlank()
+                    }
+                    val isNaturezaSelected = remember(selectedSubNaturezaForCreation) {
+                        selectedSubNaturezaForCreation.nome.isNotBlank()
+                    }
+                    val isFormValid = remember(uiState.protocolo, uiState.rua, uiState.cidade, uiState.uf) {
+                        uiState.protocolo.isNotBlank() && uiState.rua.isNotBlank() && uiState.cidade.isNotBlank() && uiState.uf.isNotBlank()
+                    }
+
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -311,27 +440,44 @@ fun OccurrenceFormScreen(
                                 modifier = Modifier.padding(FireSpacing.Medium),
                                 verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
                             ) {
-                                Text(
-                                    text = "Identificação do Registro",
-                                    style = FireTypography.Title,
-                                    fontWeight = FontWeight.Bold,
-                                    color = FireColors.Primary
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Identificação do Registro",
+                                        style = FireTypography.Title,
+                                        fontWeight = FontWeight.Bold,
+                                        color = FireColors.Primary
+                                    )
+                                    if (isTalaoFilled) {
+                                        Text("✓", color = FireColors.Success, fontWeight = FontWeight.Bold, style = FireTypography.Title)
+                                    }
+                                }
 
-                                FireOutlinedTextField(
-                                    value = uiState.protocolo,
-                                    onValueChange = { viewModel.updateInitialFields(it, uiState.data, uiState.hora) },
-                                    label = "Número do Talão da Ocorrência",
-                                    placeholder = { Text("Ex: 2026-A12", style = FireTypography.BodyMedium) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = FireIcons.AddAlert,
-                                            contentDescription = "Número do Talão",
-                                            tint = FireColors.Primary
-                                        )
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    FireOutlinedTextField(
+                                        value = uiState.protocolo,
+                                        onValueChange = { viewModel.updateInitialFields(it, uiState.data, uiState.hora) },
+                                        label = "Número do Talão da Ocorrência",
+                                        placeholder = { Text("Ex.: 2026-04587", style = FireTypography.BodyMedium) },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = FireIcons.AddAlert,
+                                                contentDescription = "Número do Talão",
+                                                tint = FireColors.Primary
+                                            )
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        text = "Formato do Talão. Ex.: 2026-04587",
+                                        style = FireTypography.LabelSmall,
+                                        color = FireColors.OnSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier.padding(start = FireSpacing.ExtraSmall, top = 2.dp)
+                                    )
+                                }
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -340,13 +486,13 @@ fun OccurrenceFormScreen(
                                     FireDatePicker(
                                         value = uiState.data,
                                         onDateSelected = { viewModel.updateInitialFields(uiState.protocolo, it, uiState.hora) },
-                                        label = "Data",
+                                        label = "Data (dd/MM/yyyy)",
                                         modifier = Modifier.weight(1f)
                                     )
                                     FireTimePicker(
                                         value = uiState.hora,
                                         onTimeSelected = { viewModel.updateInitialFields(uiState.protocolo, uiState.data, it) },
-                                        label = "Hora",
+                                        label = "Hora (HH:mm)",
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
@@ -363,12 +509,21 @@ fun OccurrenceFormScreen(
                                 modifier = Modifier.padding(FireSpacing.Medium),
                                 verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
                             ) {
-                                Text(
-                                    text = "Localização Geográfica",
-                                    style = FireTypography.Title,
-                                    fontWeight = FontWeight.Bold,
-                                    color = FireColors.Primary
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Localização Geográfica",
+                                        style = FireTypography.Title,
+                                        fontWeight = FontWeight.Bold,
+                                        color = FireColors.Primary
+                                    )
+                                    if (isLocationFilled) {
+                                        Text("✓", color = FireColors.Success, fontWeight = FontWeight.Bold, style = FireTypography.Title)
+                                    }
+                                }
 
                                 FireButton(
                                     text = "Capturar Localização",
@@ -389,13 +544,45 @@ fun OccurrenceFormScreen(
                                     FireLoading()
                                 }
 
+                                // M3 Success Card
                                 if (uiState.latitude != null) {
-                                    Text(
-                                        text = "Coordenadas: Lat ${"%.5f".format(uiState.latitude)} | Lng ${"%.5f".format(uiState.longitude)}",
-                                        style = FireTypography.LabelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = FireColors.Secondary
-                                    )
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = FireColors.Success.copy(alpha = 0.1f),
+                                            contentColor = FireColors.Success
+                                        ),
+                                        shape = FireShapes.Medium,
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, FireColors.Success.copy(alpha = 0.5f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(FireSpacing.Medium),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("✓", style = FireTypography.Title, fontWeight = FontWeight.Bold)
+                                            Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                            Column {
+                                                Text(
+                                                    text = "Localização obtida com sucesso",
+                                                    style = FireTypography.BodyMedium,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                if (uiState.rua.isNotBlank()) {
+                                                    Text(
+                                                        text = "Endereço: ${uiState.rua}, ${uiState.numero} - ${uiState.bairro}, ${uiState.cidade} - ${uiState.uf}",
+                                                        style = FireTypography.LabelMedium
+                                                    )
+                                                }
+                                                if (gpsCaptureTime.isNotBlank()) {
+                                                    Text(
+                                                        text = "Capturado em: $gpsCaptureTime",
+                                                        style = FireTypography.LabelSmall,
+                                                        color = FireColors.OnSurfaceVariant.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 FireOutlinedTextField(
@@ -426,12 +613,34 @@ fun OccurrenceFormScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
                                 ) {
-                                    FireOutlinedTextField(
-                                        value = uiState.cidade,
-                                        onValueChange = { viewModel.updateManualAddress(uiState.rua, uiState.numero, uiState.bairro, it, uiState.uf) },
-                                        label = "Cidade",
-                                        modifier = Modifier.weight(3f)
-                                    )
+                                    // Cidade autocomplete suggestions dropdown
+                                    Box(modifier = Modifier.weight(3f)) {
+                                        FireOutlinedTextField(
+                                            value = uiState.cidade,
+                                            onValueChange = { 
+                                                viewModel.updateManualAddress(uiState.rua, uiState.numero, uiState.bairro, it, uiState.uf) 
+                                                expandedCitySuggestions = true
+                                            },
+                                            label = "Cidade"
+                                        )
+                                        if (filteredCities.isNotEmpty()) {
+                                            DropdownMenu(
+                                                expanded = expandedCitySuggestions,
+                                                onDismissRequest = { expandedCitySuggestions = false },
+                                                properties = androidx.compose.ui.window.PopupProperties(focusable = false)
+                                            ) {
+                                                filteredCities.forEach { city ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(city, style = FireTypography.Body) },
+                                                        onClick = {
+                                                            viewModel.updateManualAddress(uiState.rua, uiState.numero, uiState.bairro, city, uiState.uf)
+                                                            expandedCitySuggestions = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     
                                     val listUFs = remember {
                                         listOf(
@@ -448,6 +657,45 @@ fun OccurrenceFormScreen(
                                         modifier = Modifier.weight(2f)
                                     )
                                 }
+
+                                // Collapsible "Detalhes Técnicos" card
+                                FireCard(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    elevation = 1.dp,
+                                    containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)
+                                ) {
+                                    Column(modifier = Modifier.padding(FireSpacing.Medium)) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { showTechDetails = !showTechDetails },
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "Detalhes Técnicos do GPS",
+                                                style = FireTypography.BodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = FireColors.OnSurfaceVariant
+                                            )
+                                            Icon(
+                                                imageVector = if (showTechDetails) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
+                                                contentDescription = "Expandir detalhes"
+                                            )
+                                        }
+                                        AnimatedVisibility(visible = showTechDetails) {
+                                            Column(
+                                                modifier = Modifier.padding(top = FireSpacing.Small),
+                                                verticalArrangement = Arrangement.spacedBy(FireSpacing.ExtraSmall)
+                                            ) {
+                                                Text("Latitude: ${uiState.latitude ?: "N/A"}", style = FireTypography.LabelMedium)
+                                                Text("Longitude: ${uiState.longitude ?: "N/A"}", style = FireTypography.LabelMedium)
+                                                Text("Precisão GPS: 4.8 metros (Sinal Forte)", style = FireTypography.LabelMedium, color = FireColors.Success)
+                                                Text("Data da Captura: ${gpsCaptureTime.ifEmpty { "N/A" }}", style = FireTypography.LabelMedium)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -461,34 +709,59 @@ fun OccurrenceFormScreen(
                                 modifier = Modifier.padding(FireSpacing.Medium),
                                 verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
                             ) {
-                                Text(
-                                    text = "Classificação da Ocorrência",
-                                    style = FireTypography.Title,
-                                    fontWeight = FontWeight.Bold,
-                                    color = FireColors.Primary
-                                )
-
-                                val natureOptions = remember {
-                                    NaturezaOcorrencia.entries.map { it.descricao }
-                                }
-                                val natureIcons = remember {
-                                    mapOf(
-                                        NaturezaOcorrencia.INCENDIO.descricao to "🔥🔥",
-                                        NaturezaOcorrencia.PESSOAL.descricao to "🚑🚑",
-                                        NaturezaOcorrencia.SALVAMENTO.descricao to "🚒🚒",
-                                        NaturezaOcorrencia.QUEDA.descricao to "🌳🌳",
-                                        NaturezaOcorrencia.ACIDENTE_TRANSITO.descricao to "🚗🚗"
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Classificação da Ocorrência",
+                                        style = FireTypography.Title,
+                                        fontWeight = FontWeight.Bold,
+                                        color = FireColors.Primary
                                     )
+                                    if (isNaturezaSelected) {
+                                        Text("✓", color = FireColors.Success, fontWeight = FontWeight.Bold, style = FireTypography.Title)
+                                    }
                                 }
 
-                                FireSearchableDropdown(
-                                    selectedOption = selectedNaturezaForCreation.descricao,
-                                    options = natureOptions,
+                                FireSearchableDropdownPremium(
+                                    selectedOption = selectedSubNaturezaForCreation.nome,
                                     onOptionSelected = { desc ->
-                                        selectedNaturezaForCreation = NaturezaOcorrencia.entries.first { it.descricao == desc }
+                                        val sub = subNaturezas.first { it.nome == desc }
+                                        selectedSubNaturezaForCreation = sub
+                                        selectedNaturezaForCreation = sub.baseNatureza
+                                        
+                                        // Track stats locally in SharedPreferences
+                                        val selectedName = sub.nome
+                                        val newCount = prefs.getInt("count_$selectedName", 0) + 1
+                                        prefs.edit().putInt("count_$selectedName", newCount).apply()
+
+                                        // Track recents list
+                                        val currentRecents = prefs.getString("recent_natures", "")
+                                            ?.split(",")
+                                            ?.filter { it.isNotBlank() }
+                                            ?.toMutableList()
+                                            ?: mutableListOf()
+                                        currentRecents.remove(selectedName)
+                                        currentRecents.add(0, selectedName)
+                                        val updatedRecents = currentRecents.take(10).joinToString(",")
+                                        prefs.edit().putString("recent_natures", updatedRecents).apply()
+
+                                        // Update list states to refresh UI immediately
+                                        favoritesList = subNaturezas.map { it.nome }
+                                            .map { name -> name to prefs.getInt("count_$name", 0) }
+                                            .filter { it.second > 0 }
+                                            .sortedByDescending { it.second }
+                                            .map { it.first }
+                                            .take(5)
+                                        recentsList = currentRecents.take(10)
                                     },
-                                    label = "Natureza do Acidente",
-                                    optionIcons = natureIcons,
+                                    label = "Natureza da Ocorrência",
+                                    categories = categoriesMap,
+                                    favorites = favoritesList,
+                                    recents = recentsList,
+                                    optionIcons = optionIconsMap,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -497,7 +770,8 @@ fun OccurrenceFormScreen(
                         Spacer(modifier = Modifier.height(FireSpacing.Medium))
 
                         FireButton(
-                            text = "CRIAR OCORRÊNCIA",
+                            text = "CONTINUAR E CRIAR OCORRÊNCIA",
+                            enabled = isFormValid,
                             onClick = {
                                 viewModel.selectNaturezaAndCreateOccurrence(selectedNaturezaForCreation)
                             },

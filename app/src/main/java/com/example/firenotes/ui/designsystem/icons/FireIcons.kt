@@ -40,6 +40,7 @@ object FireIcons {
     val Security: ImageVector = Icons.Rounded.Security
     val DeleteForever: ImageVector = Icons.Rounded.DeleteForever
     val ArrowDropDown: ImageVector = Icons.Rounded.ArrowDropDown
+    val ArrowDropUp: ImageVector = Icons.Rounded.ArrowDropUp
     val Error: ImageVector = Icons.Rounded.Error
     val ChevronRight: ImageVector = Icons.Rounded.ChevronRight
     val Edit: ImageVector = Icons.Rounded.Edit
