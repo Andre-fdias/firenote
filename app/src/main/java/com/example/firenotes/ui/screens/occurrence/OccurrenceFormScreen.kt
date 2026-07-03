@@ -224,6 +224,18 @@ fun OccurrenceFormScreen(
         }
     }
 
+    LaunchedEffect(uiState.formStage) {
+        if (uiState.formStage == FormStage.INITIAL_DATA) {
+            val currentDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+            val currentTime = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+            val dataVal = if (uiState.data.isBlank()) currentDate else uiState.data
+            val horaVal = if (uiState.hora.isBlank()) currentTime else uiState.hora
+            if (uiState.data.isBlank() || uiState.hora.isBlank()) {
+                viewModel.updateInitialFields(uiState.protocolo, dataVal, horaVal)
+            }
+        }
+    }
+
     LaunchedEffect(isGpsMethod, uiState.formStage) {
         if (isGpsMethod && uiState.formStage == FormStage.INITIAL_DATA && uiState.latitude == null) {
             val fineCheck = androidx.core.content.ContextCompat.checkSelfPermission(

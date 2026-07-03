@@ -3,6 +3,8 @@ package com.example.firenotes.ui.designsystem.components.inputs
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -145,13 +147,24 @@ fun FireDatePicker(
         )
     }
 
-    Box(modifier = modifier.clickable { datePickerDialog.show() }) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { datePickerDialog.show() }
+    ) {
         FireOutlinedTextField(
             value = value,
             onValueChange = {},
             label = label,
-            enabled = false,
-            trailingIcon = { Icon(imageVector = FireIcons.Calendar, contentDescription = "Escolha a data", tint = FireColor.Primary) }
+            readOnly = true,
+            enabled = true,
+            trailingIcon = { Icon(imageVector = FireIcons.Calendar, contentDescription = "Escolha a data", tint = FireColors.Primary) }
+        )
+        // Overlay to capture clicks safely and prevent keyboard focus
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clickable { datePickerDialog.show() }
         )
     }
 }
@@ -179,13 +192,24 @@ fun FireTimePicker(
         )
     }
 
-    Box(modifier = modifier.clickable { timePickerDialog.show() }) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { timePickerDialog.show() }
+    ) {
         FireOutlinedTextField(
             value = value,
             onValueChange = {},
             label = label,
-            enabled = false,
-            trailingIcon = { Icon(imageVector = FireIcons.Time, contentDescription = "Escolha a hora", tint = FireColor.Primary) }
+            readOnly = true,
+            enabled = true,
+            trailingIcon = { Icon(imageVector = FireIcons.Time, contentDescription = "Escolha a hora", tint = FireColors.Primary) }
+        )
+        // Overlay to capture clicks safely and prevent keyboard focus
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clickable { timePickerDialog.show() }
         )
     }
 }
@@ -429,21 +453,55 @@ fun FireSearchableDropdownPremium(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState()
 
     val allOptions = remember(categories) {
         categories.values.flatten()
     }
 
     val filteredOptions = remember(searchQuery, categories) {
-        if (searchQuery.isBlank()) {
-            emptyList()
-        } else {
-            allOptions.filter { option ->
-                option.contains(searchQuery, ignoreCase = true) ||
-                categories.entries.any { entry ->
-                    entry.value.contains(option) && entry.key.contains(searchQuery, ignoreCase = true)
+        try {
+            if (searchQuery.isBlank()) {
+                emptyList()
+            } else {
+                val subNatureKeywordsMap = mapOf(
+                    "Incêndio em residência" to listOf("casa", "fogo", "residencia", "lar", "domestico"),
+                    "Incêndio em comércio" to listOf("loja", "fogo", "estabelecimento", "predio"),
+                    "Incêndio em veículo" to listOf("carro", "fogo", "veiculo", "moto", "caminhao"),
+                    "Incêndio florestal" to listOf("mato", "fogo", "arvore", "floresta", "queimada", "vegetacao"),
+                    "Incêndio industrial" to listOf("galpao", "fogo", "industria", "fabrica", "quimico"),
+                    "Mal súbito" to listOf("desmaio", "pressao", "passando mal", "infarto"),
+                    "Queda" to listOf("altura", "propria altura", "chao", "queda"),
+                    "Trauma" to listOf("fratura", "corte", "sangramento", "ferimento"),
+                    "PCR" to listOf("parada", "cardio", "respiratoria", "reanimacao"),
+                    "Parto" to listOf("nascimento", "bebe", "gravida", "gestante"),
+                    "Afogamento" to listOf("agua", "piscina", "rio", "mar"),
+                    "Altura" to listOf("rapel", "ponte", "predio", "elevado"),
+                    "Aquático" to listOf("rio", "mar", "represa", "afogamento"),
+                    "Estrutural" to listOf("desabamento", "escombros", "colapso"),
+                    "Animal" to listOf("cachorro", "gato", "cobra", "resgate", "bicho"),
+                    "Busca" to listOf("desaparecido", "floresta", "resgate", "perdido"),
+                    "Colisão" to listOf("batida", "carro", "veiculo", "transito"),
+                    "Capotamento" to listOf("tombamento", "carro", "veiculo", "transito"),
+                    "Atropelamento" to listOf("pedestre", "carro", "veiculo", "atropelar"),
+                    "Moto" to listOf("colisao moto", "queda moto", "motocicleta"),
+                    "Caminhão" to listOf("carreta", "caminhao", "veiculo pesado"),
+                    "Queda de árvore" to listOf("arvore", "via", "bloqueio", "vento"),
+                    "Choque elétrico" to listOf("energia", "fio", "poste", "eletrocussao"),
+                    "Vazamento" to listOf("gas", "agua", "produto", "vazando"),
+                    "Produtos perigosos" to listOf("quimico", "gas", "carga", "explosivo")
+                )
+                allOptions.filter { option ->
+                    option.contains(searchQuery, ignoreCase = true) ||
+                    (subNatureKeywordsMap[option]?.any { it.contains(searchQuery, ignoreCase = true) } ?: false) ||
+                    categories.entries.any { entry ->
+                        entry.value.contains(option) && entry.key.contains(searchQuery, ignoreCase = true)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            android.util.Log.e("FireNotes", "NatureDropdown error filtering: ${e.message}", e)
+            emptyList()
         }
     }
 
@@ -461,21 +519,25 @@ fun FireSearchableDropdownPremium(
                 { Text(emoji, modifier = Modifier.padding(start = 12.dp), style = FireTypography.Title) }
             },
             trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                Icon(
+                    imageVector = if (expanded) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
+                    contentDescription = "Dropdown"
+                )
             },
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth()
         )
 
-        ExposedDropdownMenu(
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = {
                 expanded = false
                 searchQuery = ""
             },
+            properties = androidx.compose.ui.window.PopupProperties(focusable = true),
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(0.9f)
                 .heightIn(max = 400.dp)
         ) {
             OutlinedTextField(
@@ -491,22 +553,21 @@ fun FireSearchableDropdownPremium(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall))
 
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 300.dp)
+                    .verticalScroll(scrollState)
             ) {
                 if (searchQuery.isNotBlank()) {
                     if (filteredOptions.isEmpty()) {
-                        item {
-                            DropdownMenuItem(
-                                text = { Text("Nenhum resultado encontrado", style = FireTypography.Body) },
-                                onClick = {},
-                                enabled = false
-                            )
-                        }
+                        DropdownMenuItem(
+                            text = { Text("Nenhuma natureza encontrada", style = FireTypography.Body) },
+                            onClick = {},
+                            enabled = false
+                        )
                     } else {
-                        items(filteredOptions) { option ->
+                        filteredOptions.forEach { option ->
                             val emoji = optionIcons[option]
                             DropdownMenuItem(
                                 text = {
@@ -528,16 +589,14 @@ fun FireSearchableDropdownPremium(
                     }
                 } else {
                     if (favorites.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "⭐ NATUREZAS MAIS UTILIZADAS",
-                                style = FireTypography.LabelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = FireColors.Primary,
-                                modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
-                            )
-                        }
-                        items(favorites) { option ->
+                        Text(
+                            text = "⭐ NATUREZAS MAIS UTILIZADAS",
+                            style = FireTypography.LabelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = FireColors.Primary,
+                            modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
+                        )
+                        favorites.forEach { option ->
                             val emoji = optionIcons[option]
                             DropdownMenuItem(
                                 text = {
@@ -555,20 +614,18 @@ fun FireSearchableDropdownPremium(
                                 }
                             )
                         }
-                        item { HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall)) }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall))
                     }
 
                     if (recents.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "🕒 ÚLTIMAS UTILIZADAS",
-                                style = FireTypography.LabelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = FireColors.OnSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
-                            )
-                        }
-                        items(recents) { option ->
+                        Text(
+                            text = "🕒 ÚLTIMAS UTILIZADAS",
+                            style = FireTypography.LabelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = FireColors.OnSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
+                        )
+                        recents.forEach { option ->
                             val emoji = optionIcons[option]
                             DropdownMenuItem(
                                 text = {
@@ -586,20 +643,18 @@ fun FireSearchableDropdownPremium(
                                 }
                             )
                         }
-                        item { HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall)) }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall))
                     }
 
                     categories.forEach { (category, optionsList) ->
-                        item {
-                            Text(
-                                text = category,
-                                style = FireTypography.LabelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = FireColors.Primary,
-                                modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
-                            )
-                        }
-                        items(optionsList) { option ->
+                        Text(
+                            text = category,
+                            style = FireTypography.LabelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = FireColors.Primary,
+                            modifier = Modifier.padding(horizontal = FireSpacing.Medium, vertical = FireSpacing.Small)
+                        )
+                        optionsList.forEach { option ->
                             val emoji = optionIcons[option]
                             DropdownMenuItem(
                                 text = {
@@ -617,7 +672,7 @@ fun FireSearchableDropdownPremium(
                                 }
                             )
                         }
-                        item { HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall)) }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall))
                     }
                 }
             }
