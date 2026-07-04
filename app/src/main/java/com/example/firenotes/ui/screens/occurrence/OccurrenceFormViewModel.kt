@@ -122,6 +122,8 @@ class OccurrenceFormViewModel @Inject constructor(
                         java.time.LocalDateTime.ofInstant(occurrence.dataHora, java.time.ZoneId.systemDefault()).format(formatter)
                     } catch(e: Exception) { "" }
 
+                    android.util.Log.d("FireNotes", "Viaturas carregadas - Quantidade: ${viaturas.size}, ID ocorrência: $occurrenceId")
+
                     _uiState.update { 
                         it.copy(
                             id = occurrence.id,
@@ -144,6 +146,7 @@ class OccurrenceFormViewModel @Inject constructor(
                             veiculos = occurrence.veiculos,
                             vitimas = occurrence.vitimas,
                             evidencias = evidencias,
+                            apoiosDetalhados = occurrence.apoiosDetalhados,
                             formStage = FormStage.TABS,
                             isLoading = false
                         )
@@ -666,6 +669,7 @@ class OccurrenceFormViewModel @Inject constructor(
             )
             repository.addViatura(viatura)
                 .onSuccess { saved ->
+                    android.util.Log.d("FireNotes", "Viatura salva - ID ocorrência: ${saved.ocorrenciaId}, ID viatura: ${saved.id}, Prefixo: ${saved.prefixo}, Timestamp: ${System.currentTimeMillis()}")
                     _uiState.update { state ->
                         val updatedList = if (viaturaId != null) {
                             state.viaturas.map { if (it.id == viaturaId) saved else it }

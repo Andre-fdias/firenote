@@ -199,10 +199,62 @@ class RoomOcorrenciaRepository @Inject constructor(
     override fun getOcorrencias(): Flow<List<Ocorrencia>> {
         return ocorrenciaDao.getOcorrenciasFlow().map { list ->
             list.map { o ->
-                val addr = ocorrenciaDao.getEnderecoForOcorrencia(o.id)
+                val id = o.id
+                val addr = ocorrenciaDao.getEnderecoForOcorrencia(id)
                 val parsedFotos = try { json.decodeFromString<List<String>>(o.fotos) } catch(e: Exception) { emptyList() }
+                
+                val roomVeiculos = ocorrenciaDao.getVeiculosForOcorrencia(id)
+                val roomVitimas = ocorrenciaDao.getVitimasForOcorrencia(id)
+                val roomViaturas = ocorrenciaDao.getViaturasForOcorrencia(id)
+                val roomApoios = ocorrenciaDao.getApoioForOcorrencia(id)
+
+                val veiculosList = roomVeiculos.map { rv ->
+                    val ocrMap = try { json.decodeFromString<Map<String, String>>(rv.ocrDadosEstruturados) } catch (e: Exception) { emptyMap() }
+                    VeiculoEnvolvido(
+                        id = rv.id, ocorrenciaId = id, veiculoMasterId = rv.veiculoMasterId, condutorId = rv.condutorId,
+                        placa = rv.placa, cor = rv.cor, chassi = rv.chassi, modelo = rv.modelo, ano = rv.ano, renavam = rv.renavam,
+                        monobloco = rv.monobloco, especie = rv.especie, tipoVeiculo = rv.tipoVeiculo, carroceria = rv.carroceria,
+                        marca = rv.marca, versao = rv.versao, anoFabricacao = rv.anoFabricacao, anoModelo = rv.anoModelo,
+                        categoriaVeiculo = rv.categoriaVeiculo, exercicio = rv.exercicio, urlCrlv = rv.urlCrlv, ocrTextoCrlv = rv.ocrTextoCrlv,
+                        ocrDadosEstruturados = ocrMap, dadosMotorista = Motorista(rv.condutorNome, rv.condutorCnh, rv.condutorCategoriaCnh, rv.condutorDataNascimento, rv.condutorTelefone)
+                    )
+                }
+
+                val vitimasList = roomVitimas.map { rv ->
+                    Vitima(
+                        id = rv.id, ocorrenciaId = id, nome = rv.nome, idade = rv.idade, lesoesAparentes = rv.lesoesAparentes,
+                        destinoSocorro = rv.destinoSocorro, quemSocorreu = rv.quemSocorreu, resultadoOcorrencia = rv.resultadoOcorrencia,
+                        pessoaId = rv.pessoaId, viaturaSocorroId = rv.viaturaSocorroId, hospitalDestino = rv.hospitalDestino,
+                        transportadoPor = rv.transportadoPor, sinaisVitais = SinaisVitais(rv.pulso, rv.pressaoArterial, rv.saturacaoO2, rv.temperatura, rv.escalaGCS, rv.observacoesMedicas)
+                    )
+                }
+
+                val viaturasList = roomViaturas.map { rv ->
+                    val roomMilitares = ocorrenciaDao.getMilitaresForViatura(rv.id)
+                    val equipeList = roomMilitares.map { rm ->
+                        Militar(rm.id, rv.id, rm.militarMasterId, rm.re, rm.nomeGuerra, GraduacaoMilitar.fromDescricao(rm.graduacao), rm.funcao)
+                    }
+                    Viatura(
+                        id = rv.id, ocorrenciaId = id, viaturaMasterId = rv.viaturaMasterId, prefixo = rv.prefixo, tipo = rv.tipo,
+                        unidade = rv.unidade, kmSaida = rv.kmSaida, kmLocal = rv.kmLocal, kmRetorno = rv.kmRetorno,
+                        horaDespacho = rv.horaDespacho, horaSaida = rv.horaSaida, horaChegada = rv.horaChegada, horaRetorno = rv.horaRetorno,
+                        observacoes = rv.observacoes, equipe = equipeList
+                    )
+                }
+
+                val apoiosList = roomApoios.mapNotNull { ra ->
+                    val orgao = ocorrenciaDao.getOrgaoApoioById(ra.orgaoId)
+                    orgao?.let {
+                        ApoioOcorrencia(
+                            orgao = OrgaoApoio(it.id, it.nome, it.sigla),
+                            viatura = ra.viatura,
+                            encarregado = ra.encarregado
+                        )
+                    }
+                }
+
                 Ocorrencia(
-                    id = o.id,
+                    id = id,
                     protocolo = o.protocolo,
                     natureza = NaturezaOcorrencia.fromDescricao(o.natureza),
                     latitude = o.latitude,
@@ -214,7 +266,11 @@ class RoomOcorrenciaRepository @Inject constructor(
                     numero = addr?.numero,
                     bairro = addr?.bairro,
                     cidade = addr?.cidade,
-                    uf = addr?.uf
+                    uf = addr?.uf,
+                    veiculos = veiculosList,
+                    vitimas = vitimasList,
+                    viaturas = viaturasList,
+                    apoiosDetalhados = apoiosList
                 )
             }
         }
