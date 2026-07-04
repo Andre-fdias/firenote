@@ -1150,15 +1150,15 @@ private fun ModularDashboardView(
         // Grid of Module Cards
         val modulesList = listOf(
             ModuleInfo("Endereço", "📍📍", 1, uiState.rua.ifBlank { "Nenhum endereço" }, calculateStatus(OccurrenceModule.ENDERECO, uiState), onModuleSelected),
+            ModuleInfo("Documentos", "📄📄", uiState.documentos.size, "${uiState.documentos.size} documentos", calculateStatus(OccurrenceModule.DOCUMENTOS, uiState), onModuleSelected),
             ModuleInfo("Viaturas", "🚒🚒", uiState.viaturas.size, "${uiState.viaturas.size} viaturas", calculateStatus(OccurrenceModule.VIATURAS, uiState), onModuleSelected),
-            ModuleInfo("Militares", "👮👮", uiState.viaturas.sumOf { it.equipe.size }, "${uiState.viaturas.sumOf { it.equipe.size }} militares", calculateStatus(OccurrenceModule.MILITARES, uiState), onModuleSelected),
+            ModuleInfo("Militares", "👨👨🚒🚒", uiState.viaturas.sumOf { it.equipe.size }, "${uiState.viaturas.sumOf { it.equipe.size }} militares", calculateStatus(OccurrenceModule.MILITARES, uiState), onModuleSelected),
             ModuleInfo("Veículos", "🚗🚗", uiState.veiculos.size, "${uiState.veiculos.size} veículos", calculateStatus(OccurrenceModule.VEICULOS, uiState), onModuleSelected),
-            ModuleInfo("Documentos", "🪪🪪", uiState.documentos.size, "${uiState.documentos.size} documentos", calculateStatus(OccurrenceModule.DOCUMENTOS, uiState), onModuleSelected),
             ModuleInfo("Vítimas", "🩺🩺", uiState.vitimas.size, "${uiState.vitimas.size} vítimas", calculateStatus(OccurrenceModule.VITIMAS, uiState), onModuleSelected),
             ModuleInfo("Apoios", "🤝🤝", uiState.apoiosDetalhados.size, "${uiState.apoiosDetalhados.size} apoios", calculateStatus(OccurrenceModule.APOIOS, uiState), onModuleSelected),
             ModuleInfo("Histórico", "📝📝", if (uiState.historico.isNotEmpty()) 1 else 0, if (uiState.historico.isNotEmpty()) "Preenchido" else "Não iniciado", calculateStatus(OccurrenceModule.HISTORICO, uiState), onModuleSelected),
             ModuleInfo("Evidências", "📷📷", uiState.evidencias.size, "${uiState.evidencias.size} evidências", calculateStatus(OccurrenceModule.EVIDENCIAS, uiState), onModuleSelected),
-            ModuleInfo("Anexos", "📄📄", uiState.fotos.size + uiState.videos.size, "${uiState.fotos.size + uiState.videos.size} mídias", calculateStatus(OccurrenceModule.ANEXOS, uiState), onModuleSelected)
+            ModuleInfo("Anexos", "📎📎", uiState.fotos.size + uiState.videos.size, "${uiState.fotos.size + uiState.videos.size} mídias", calculateStatus(OccurrenceModule.ANEXOS, uiState), onModuleSelected)
         )
 
         LazyVerticalGrid(
