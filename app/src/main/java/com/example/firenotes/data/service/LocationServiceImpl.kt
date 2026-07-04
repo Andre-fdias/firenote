@@ -74,12 +74,28 @@ class LocationServiceImpl @Inject constructor(
                 throw Exception("Nenhum endereço encontrado para essas coordenadas.")
             }
             val address = addresses[0]
+            val rawNum = address.subThoroughfare
+            val num = if (rawNum == null || rawNum == "null" || rawNum == "0") "" else rawNum
+            
+            val cidade = address.locality?.takeIf { it.isNotBlank() }
+                ?: address.subAdminArea?.takeIf { it.isNotBlank() }
+                ?: address.adminArea?.takeIf { it.isNotBlank() }
+                ?: address.subLocality?.takeIf { it.isNotBlank() }
+                ?: ""
+                
+            val ufSigla = getUfAbbreviation(address.adminArea)
+            
+            android.util.Log.d(
+                "FireNotes",
+                "ReverseGeocoder: Latitude=$latitude, Longitude=$longitude, Rua=${address.thoroughfare ?: ""}, Número=$num, Bairro=${address.subLocality ?: ""}, Cidade=$cidade, UF=$ufSigla, Precisão=N/A, Timestamp=${System.currentTimeMillis()}"
+            )
+
             AddressDetails(
                 rua = address.thoroughfare ?: "",
-                numero = address.subThoroughfare ?: "",
+                numero = num,
                 bairro = address.subLocality ?: "",
-                cidade = address.locality ?: "",
-                uf = getUfAbbreviation(address.adminArea)
+                cidade = cidade,
+                uf = ufSigla
             )
         }
     }

@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -2434,15 +2435,20 @@ fun AddViaturaDialog(
                         placeholder = { Text("Ex.: UR-12345") }
                     )
 
-                    val unidadeOptions = remember {
-                        listOf("10º GB", "15º GB", "Posto Avançado", "Base Operacional", "Estação")
-                    }
-                    FireDropdown(
-                        selectedOption = unidade,
-                        options = unidadeOptions,
-                        onOptionSelected = { unidade = it },
+                    FireOutlinedTextField(
+                        value = unidade,
+                        onValueChange = { 
+                            if (it.length <= 80) {
+                                unidade = it.uppercase(java.util.Locale("pt", "BR"))
+                            }
+                        },
                         label = "Unidade/Batalhão",
-                        modifier = Modifier.fillMaxWidth()
+                        placeholder = { Text("Ex.: 10º GB") },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            autoCorrectEnabled = false
+                        ),
+                        leadingIcon = { Text("🏢", modifier = Modifier.padding(start = 12.dp), style = FireTypography.Title) }
                     )
                 }
             }
