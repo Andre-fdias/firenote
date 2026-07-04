@@ -1,6 +1,7 @@
 package com.example.firenotes.ui.screens.occurrence
 
 import android.net.Uri
+import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -306,6 +307,60 @@ fun OccurrenceFormScreen(
         }
     }
 
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            try {
+                if (activeOcrScanType == "EVIDENCIA") {
+                    val uri = viewModel.createPhotoUri()
+                    evidencePhotoUri = uri
+                    evidenceLauncher.launch(uri)
+                } else if (activeOcrScanType == "CRLV" || activeOcrScanType == "DOCUMENTO") {
+                    val uri = viewModel.createPhotoUri()
+                    tempPhotoUri = uri
+                    takePictureLauncher.launch(uri)
+                }
+            } catch (e: Exception) {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Erro ao iniciar a câmera: ${e.localizedMessage}")
+                }
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("Permissão de câmera negada. Não é possível tirar foto.")
+            }
+        }
+    }
+
+    val launchCameraWithPermissionCheck: (String) -> Unit = { scanType ->
+        activeOcrScanType = scanType
+        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        
+        if (hasPermission) {
+            try {
+                val newUri = viewModel.createPhotoUri()
+                if (scanType == "EVIDENCIA") {
+                    evidencePhotoUri = newUri
+                    evidenceLauncher.launch(newUri)
+                } else {
+                    tempPhotoUri = newUri
+                    takePictureLauncher.launch(newUri)
+                }
+                android.util.Log.d("FireNotes", "Camera - URI criada: $newUri")
+            } catch (e: Exception) {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Erro ao iniciar a câmera: ${e.localizedMessage}")
+                }
+            }
+        } else {
+            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+        }
+    }
+
     val autoSaveAndCloseModule: () -> Unit = {
         viewModel.finalizeOccurrence()
         activeModule = null
@@ -376,9 +431,7 @@ fun OccurrenceFormScreen(
                         FireFAB(
                             icon = FireIcons.LocationOn,
                             onClick = {
-                                val uri = viewModel.createPhotoUri()
-                                evidencePhotoUri = uri
-                                evidenceLauncher.launch(uri)
+                                launchCameraWithPermissionCheck("EVIDENCIA")
                             }
                         )
                     }
@@ -872,10 +925,7 @@ fun OccurrenceFormScreen(
                                                 showAddVehicleDialog = true
                                             },
                                             onScanCrlvClick = {
-                                                val newUri = viewModel.createPhotoUri()
-                                                tempPhotoUri = newUri
-                                                activeOcrScanType = "CRLV"
-                                                takePictureLauncher.launch(newUri)
+                                                launchCameraWithPermissionCheck("CRLV")
                                             },
                                             onBack = autoSaveAndCloseModule
                                         )
@@ -888,10 +938,7 @@ fun OccurrenceFormScreen(
                                                 showAddDocDialog = true
                                             },
                                             onScanDocClick = {
-                                                val newUri = viewModel.createPhotoUri()
-                                                tempPhotoUri = newUri
-                                                activeOcrScanType = "DOCUMENTO"
-                                                takePictureLauncher.launch(newUri)
+                                                launchCameraWithPermissionCheck("DOCUMENTO")
                                             },
                                             onBack = autoSaveAndCloseModule
                                         )
@@ -922,9 +969,7 @@ fun OccurrenceFormScreen(
                                         EvidenciasModuleView(
                                             uiState = uiState,
                                             onTakePhoto = {
-                                                val uri = viewModel.createPhotoUri()
-                                                evidencePhotoUri = uri
-                                                evidenceLauncher.launch(uri)
+                                                launchCameraWithPermissionCheck("EVIDENCIA")
                                             },
                                             onBack = autoSaveAndCloseModule
                                         )
@@ -1656,40 +1701,117 @@ private fun VeiculosModuleView(
     onScanCrlvClick: () -> Unit,
     onBack: () -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-        ) {
-            FireButton(text = "Digitar Manual", onClick = onNewVehicleClick, modifier = Modifier.weight(1f))
-            FireButton(text = "Escanear CRLV", onClick = onScanCrlvClick, containerColor = FireColors.Secondary, modifier = Modifier.weight(1f))
-        }
-        Spacer(modifier = Modifier.height(FireSpacing.Medium))
-
-        if (uiState.veiculos.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nenhum veículo registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(uiState.veiculos) { veiculo ->
-                    FireCard {
-                        Column(modifier = Modifier.padding(FireSpacing.Medium)) {
-                            Text("🚗 Placa: ${veiculo.placa ?: "SEM PLACA"}", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                            Text("Modelo: ${veiculo.modelo} | Cor: ${veiculo.cor}", style = FireTypography.BodyMedium)
+                Text("🚗🚗 ", style = FireTypography.HeadlineMedium)
+                Column {
+                    Text("Veículos", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                    Text("Cadastre os veículos envolvidos nesta ocorrência.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = FireSpacing.Medium),
+                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+            ) {
+                FireButton(
+                    text = "Escanear CRLV",
+                    onClick = onScanCrlvClick,
+                    containerColor = FireColors.Secondary,
+                    modifier = Modifier.weight(1f),
+                    icon = FireIcons.PhotoCamera
+                )
+            }
+
+            if (uiState.veiculos.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Nenhum veículo registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(
+                        items = uiState.veiculos,
+                        key = { it.id ?: it.placa ?: java.util.UUID.randomUUID().toString() }
+                    ) { veiculo ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                        ) {
+                            Column(modifier = Modifier.padding(FireSpacing.Medium)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("🚗 ", style = FireTypography.Title)
+                                        Text(veiculo.placa ?: "SEM PLACA", style = FireTypography.Title, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+
+                                Text(
+                                    text = "Modelo: ${veiculo.modelo ?: "N/D"} | Cor: ${veiculo.cor ?: "N/D"}",
+                                    style = FireTypography.BodyMedium,
+                                    color = FireColors.OnSurfaceVariant
+                                )
+
+                                if (!veiculo.chassi.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+                                    Text(
+                                        text = "Chassi: ${veiculo.chassi}",
+                                        style = FireTypography.LabelSmall,
+                                        color = FireColors.OnSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(FireSpacing.Small))
+            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
         }
-        FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+
+        FloatingActionButton(
+            onClick = onNewVehicleClick,
+            containerColor = FireColors.Primary,
+            contentColor = androidx.compose.ui.graphics.Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 60.dp, end = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(imageVector = FireIcons.Add, contentDescription = "Novo Veículo")
+                Spacer(modifier = Modifier.width(FireSpacing.ExtraSmall))
+                Text("Novo Veículo", fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
@@ -1700,40 +1822,108 @@ private fun DocumentosModuleView(
     onScanDocClick: () -> Unit,
     onBack: () -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-        ) {
-            FireButton(text = "Digitar Manual", onClick = onNewDocClick, modifier = Modifier.weight(1f))
-            FireButton(text = "Escanear Doc", onClick = onScanDocClick, containerColor = FireColors.Secondary, modifier = Modifier.weight(1f))
-        }
-        Spacer(modifier = Modifier.height(FireSpacing.Medium))
-
-        if (uiState.documentos.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nenhum documento registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(uiState.documentos) { doc ->
-                    FireCard {
-                        Column(modifier = Modifier.padding(FireSpacing.Medium)) {
-                            Text("🪪 Tipo: ${doc.tipo}", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                            Text("Número: ${doc.numero ?: "N/D"}", style = FireTypography.BodyMedium)
+                Text("📄📄 ", style = FireTypography.HeadlineMedium)
+                Column {
+                    Text("Documentos", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                    Text("Cadastre os documentos das pessoas envolvidas.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = FireSpacing.Medium),
+                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+            ) {
+                FireButton(
+                    text = "Escanear Documento",
+                    onClick = onScanDocClick,
+                    containerColor = FireColors.Secondary,
+                    modifier = Modifier.weight(1f),
+                    icon = FireIcons.PhotoCamera
+                )
+            }
+
+            if (uiState.documentos.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Nenhum documento registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(
+                        items = uiState.documentos,
+                        key = { it.id ?: it.numero ?: java.util.UUID.randomUUID().toString() }
+                    ) { doc ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                        ) {
+                            Column(modifier = Modifier.padding(FireSpacing.Medium)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("📄 ", style = FireTypography.Title)
+                                        Text(doc.tipo, style = FireTypography.Title, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+
+                                Text(
+                                    text = "Número: ${doc.numero ?: "N/D"}",
+                                    style = FireTypography.BodyMedium,
+                                    color = FireColors.OnSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(FireSpacing.Small))
+            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
         }
-        FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+
+        FloatingActionButton(
+            onClick = onNewDocClick,
+            containerColor = FireColors.Primary,
+            contentColor = androidx.compose.ui.graphics.Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 60.dp, end = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(imageVector = FireIcons.Add, contentDescription = "Novo Documento")
+                Spacer(modifier = Modifier.width(FireSpacing.ExtraSmall))
+                Text("Novo Documento", fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
@@ -1743,35 +1933,102 @@ private fun VitimasModuleView(
     onNewVictimClick: () -> Unit,
     onBack: () -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        FireButton(onClick = onNewVictimClick, text = "+ Registrar Vítima", modifier = Modifier.fillMaxWidth())
-        Spacer(modifier = Modifier.height(FireSpacing.Medium))
-
-        if (uiState.vitimas.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nenhuma vítima registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(uiState.vitimas) { vitima ->
-                    FireCard {
-                        Column(modifier = Modifier.padding(FireSpacing.Medium)) {
-                            Text("👤 Nome: ${vitima.nome}", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                            Text("Lesões: ${vitima.lesoesAparentes} | Destino: ${vitima.hospitalDestino ?: "Não informado"}", style = FireTypography.BodyMedium)
-                            Text("Glasgow: ${vitima.sinaisVitais.escalaGCS ?: "N/D"} | FC: ${vitima.sinaisVitais.pulso ?: "N/D"}", style = FireTypography.Caption)
+                Text("🩺🩺 ", style = FireTypography.HeadlineMedium)
+                Column {
+                    Text("Vítimas", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                    Text("Cadastre as vítimas atendidas nesta ocorrência.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                }
+            }
+
+            if (uiState.vitimas.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Nenhuma vítima registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(
+                        items = uiState.vitimas,
+                        key = { it.id ?: (it.nome ?: java.util.UUID.randomUUID().toString()) }
+                    ) { vitima ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                        ) {
+                            Column(modifier = Modifier.padding(FireSpacing.Medium)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("👤 ", style = FireTypography.Title)
+                                        Text(vitima.nome ?: "N/D", style = FireTypography.Title, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+
+                                Text(
+                                    text = "Lesões: ${vitima.lesoesAparentes} | Destino: ${vitima.hospitalDestino ?: "Não informado"}",
+                                    style = FireTypography.BodyMedium,
+                                    color = FireColors.OnSurfaceVariant
+                                )
+
+                                Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+
+                                Text(
+                                    text = "Glasgow: ${vitima.sinaisVitais.escalaGCS ?: "N/D"} | FC: ${vitima.sinaisVitais.pulso ?: "N/D"}",
+                                    style = FireTypography.LabelSmall,
+                                    color = FireColors.Primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(FireSpacing.Small))
+            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
         }
-        FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+
+        FloatingActionButton(
+            onClick = onNewVictimClick,
+            containerColor = FireColors.Primary,
+            contentColor = androidx.compose.ui.graphics.Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 60.dp, end = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(imageVector = FireIcons.Add, contentDescription = "Nova Vítima")
+                Spacer(modifier = Modifier.width(FireSpacing.ExtraSmall))
+                Text("Nova Vítima", fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
@@ -1786,75 +2043,120 @@ private fun ApoiosModuleView(
     var viatura by remember { mutableStateOf("") }
     var encarregado by remember { mutableStateOf("") }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
         ) {
-            Text("Vincular Órgão de Apoio", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-            if (uiState.orgaosDisponiveis.isNotEmpty()) {
-                var expandedDropdown by remember { mutableStateOf(false) }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    FireOutlinedButton(
-                        text = "${uiState.orgaosDisponiveis[selectedOrgaoIndex].sigla} - ${uiState.orgaosDisponiveis[selectedOrgaoIndex].nome}",
-                        onClick = { expandedDropdown = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        icon = FireIcons.ArrowDropDown
-                    )
-                    DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
-                        uiState.orgaosDisponiveis.forEachIndexed { idx, org ->
-                            DropdownMenuItem(text = { Text("${org.sigla} - ${org.nome}") }, onClick = {
-                                selectedOrgaoIndex = idx
-                                expandedDropdown = false
-                            })
-                        }
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🤝🤝 ", style = FireTypography.HeadlineMedium)
+                Column {
+                    Text("Apoios", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                    Text("Vincule os órgãos de apoio que prestaram auxílio.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)) {
-                FireOutlinedTextField(value = viatura, onValueChange = { viatura = it }, label = "Viatura", modifier = Modifier.weight(1f))
-                FireOutlinedTextField(value = encarregado, onValueChange = { encarregado = it }, label = "Encarregado", modifier = Modifier.weight(1f))
-            }
-
-            FireButton(
-                text = "Adicionar Apoio",
-                onClick = {
-                    if (uiState.orgaosDisponiveis.isNotEmpty()) {
-                        onAddApoio(uiState.orgaosDisponiveis[selectedOrgaoIndex], viatura, encarregado)
-                        viatura = ""
-                        encarregado = ""
-                    }
-                },
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxWidth()
-            )
-
-            FireDivider()
-
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)) {
-                items(uiState.apoiosDetalhados.size) { idx ->
-                    val apoio = uiState.apoiosDetalhados[idx]
-                    FireCard {
-                        Row(
-                            modifier = Modifier.padding(FireSpacing.Medium),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("${apoio.orgao.sigla} - ${apoio.orgao.nome}", style = FireTypography.BodyMedium, fontWeight = FontWeight.Bold)
-                                Text("Viatura: ${apoio.viatura} | Encarregado: ${apoio.encarregado}", style = FireTypography.Caption)
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🤝 Novo Apoio", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    
+                    if (uiState.orgaosDisponiveis.isNotEmpty()) {
+                        var expandedDropdown by remember { mutableStateOf(false) }
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            FireOutlinedButton(
+                                text = "${uiState.orgaosDisponiveis[selectedOrgaoIndex].sigla} - ${uiState.orgaosDisponiveis[selectedOrgaoIndex].nome}",
+                                onClick = { expandedDropdown = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                icon = FireIcons.ArrowDropDown
+                            )
+                            DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
+                                uiState.orgaosDisponiveis.forEachIndexed { idx, org ->
+                                    DropdownMenuItem(text = { Text("${org.sigla} - ${org.nome}") }, onClick = {
+                                        selectedOrgaoIndex = idx
+                                        expandedDropdown = false
+                                    })
+                                }
                             }
-                            FireIconButton(icon = FireIcons.Delete, onClick = { onRemoveApoio(idx) }, tint = FireColors.Error)
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)) {
+                        FireOutlinedTextField(value = viatura, onValueChange = { viatura = it.uppercase(java.util.Locale("pt", "BR")) }, label = "Viatura", modifier = Modifier.weight(1f))
+                        FireOutlinedTextField(value = encarregado, onValueChange = { encarregado = it.uppercase(java.util.Locale("pt", "BR")) }, label = "Encarregado", modifier = Modifier.weight(1f))
+                    }
+
+                    FireButton(
+                        text = "Adicionar Apoio",
+                        onClick = {
+                            if (uiState.orgaosDisponiveis.isNotEmpty()) {
+                                onAddApoio(uiState.orgaosDisponiveis[selectedOrgaoIndex], viatura, encarregado)
+                                viatura = ""
+                                encarregado = ""
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            if (uiState.apoiosDetalhados.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Nenhum apoio registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                    contentPadding = PaddingValues(bottom = 8.dp)
+                ) {
+                    items(
+                        count = uiState.apoiosDetalhados.size,
+                        key = { idx -> uiState.apoiosDetalhados[idx].orgao.id + uiState.apoiosDetalhados[idx].viatura }
+                    ) { idx ->
+                        val apoio = uiState.apoiosDetalhados[idx]
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(FireSpacing.Medium),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${apoio.orgao.sigla} - ${apoio.orgao.nome}", style = FireTypography.BodyMedium, fontWeight = FontWeight.Bold)
+                                    Text("Viatura: ${apoio.viatura} | Encarregado: ${apoio.encarregado}", style = FireTypography.Caption)
+                                }
+                                FireIconButton(icon = FireIcons.Delete, onClick = { onRemoveApoio(idx) }, tint = FireColors.Error)
+                            }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(FireSpacing.Small))
+            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
         }
-        FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -1890,40 +2192,85 @@ private fun EvidenciasModuleView(
     onTakePhoto: () -> Unit,
     onBack: () -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        FireButton(onClick = onTakePhoto, text = "Fotografar Evidência", icon = FireIcons.Add, modifier = Modifier.fillMaxWidth())
-        Spacer(modifier = Modifier.height(FireSpacing.Medium))
-
-        if (uiState.evidencias.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nenhuma evidência registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(uiState.evidencias) { ev ->
-                    FireCard {
-                        Row(
-                            modifier = Modifier.padding(FireSpacing.Medium),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                Text("📎📎 ", style = FireTypography.HeadlineMedium)
+                Column {
+                    Text("Evidências", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                    Text("Fotografe e organize evidências físicas no local.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                }
+            }
+
+            if (uiState.evidencias.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Nenhuma evidência registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(
+                        items = uiState.evidencias,
+                        key = { it.id ?: (it.urlStorage.takeIf { it.isNotEmpty() } ?: it.hashSha256) }
+                    ) { ev ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
                         ) {
-                            Column {
-                                Text("Evidência: ${ev.tipo}", style = FireTypography.BodyMedium, fontWeight = FontWeight.Bold)
-                                Text("Data: ${ev.dataHora.take(16).replace("T", " ")}", style = FireTypography.Caption, color = Color.Gray)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(FireSpacing.Medium),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Evidência: ${ev.tipo}", style = FireTypography.BodyMedium, fontWeight = FontWeight.Bold)
+                                    Text("Data: ${ev.dataHora.take(16).replace("T", " ")}", style = FireTypography.Caption, color = Color.Gray)
+                                }
                             }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(FireSpacing.Small))
+            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
         }
-        FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+
+        FloatingActionButton(
+            onClick = onTakePhoto,
+            containerColor = FireColors.Primary,
+            contentColor = androidx.compose.ui.graphics.Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 60.dp, end = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(imageVector = FireIcons.PhotoCamera, contentDescription = "Fotografar Evidência")
+                Spacer(modifier = Modifier.width(FireSpacing.ExtraSmall))
+                Text("Tirar Foto", fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
@@ -2056,34 +2403,63 @@ fun AddDocumentDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
         ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                FireOutlinedButton(
-                    text = "Tipo: ${documentTypes[selectedTypeIndex]}",
-                    onClick = { expandedDropdown = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = FireIcons.ArrowDropDown
-                )
-                DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
-                    documentTypes.forEachIndexed { index, type ->
-                        DropdownMenuItem(text = { Text(type) }, onClick = {
-                            selectedTypeIndex = index
-                            expandedDropdown = false
-                        })
-                    }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("👤 Dados Pessoais", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Dados pessoais da pessoa vinculada ao documento.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+
+                    FireOutlinedTextField(value = nome, onValueChange = { nome = it }, label = "Nome Completo", colors = getFieldColors("nome"))
+                    FireOutlinedTextField(value = cpf, onValueChange = { cpf = it }, label = "CPF", colors = getFieldColors("cpf"))
+                    FireOutlinedTextField(value = nascimento, onValueChange = { nascimento = it }, label = "Data de Nascimento", colors = getFieldColors("nascimento"))
+                    FireOutlinedTextField(value = filiacao, onValueChange = { filiacao = it }, label = "Filiação (Pai/Mãe)", colors = getFieldColors("filiacao"))
+                    FireOutlinedTextField(value = naturalidade, onValueChange = { naturalidade = it }, label = "Naturalidade", colors = getFieldColors("naturalidade"))
                 }
             }
 
-            FireOutlinedTextField(value = numero, onValueChange = { numero = it }, label = "Número do Documento", colors = getFieldColors("registro"))
-            FireOutlinedTextField(value = nome, onValueChange = { nome = it }, label = "Nome Completo", colors = getFieldColors("nome"))
-            FireOutlinedTextField(value = cpf, onValueChange = { cpf = it }, label = "CPF", colors = getFieldColors("cpf"))
-            FireOutlinedTextField(value = rg, onValueChange = { rg = it }, label = "RG", colors = getFieldColors("rg"))
-            FireOutlinedTextField(value = nascimento, onValueChange = { nascimento = it }, label = "Data de Nascimento", colors = getFieldColors("nascimento"))
-            FireOutlinedTextField(value = filiacao, onValueChange = { filiacao = it }, label = "Filiação", colors = getFieldColors("filiacao"))
-            FireOutlinedTextField(value = rgOrgaoEmissor, onValueChange = { rgOrgaoEmissor = it }, label = "Órgão Emissor", colors = getFieldColors("rg_orgao_emissor"))
-            FireOutlinedTextField(value = rgUf, onValueChange = { rgUf = it }, label = "RG UF", colors = getFieldColors("rg_uf"))
-            FireOutlinedTextField(value = naturalidade, onValueChange = { naturalidade = it }, label = "Naturalidade", colors = getFieldColors("naturalidade"))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🪪 Dados do Documento", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Identificação e emissores do documento.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        FireOutlinedButton(
+                            text = "Tipo: ${documentTypes[selectedTypeIndex]}",
+                            onClick = { expandedDropdown = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            icon = FireIcons.ArrowDropDown
+                        )
+                        DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
+                            documentTypes.forEachIndexed { index, type ->
+                                DropdownMenuItem(text = { Text(type) }, onClick = {
+                                    selectedTypeIndex = index
+                                    expandedDropdown = false
+                                })
+                            }
+                        }
+                    }
+
+                    FireOutlinedTextField(value = numero, onValueChange = { numero = it }, label = "Número do Documento", colors = getFieldColors("registro"))
+                    FireOutlinedTextField(value = rg, onValueChange = { rg = it }, label = "RG", colors = getFieldColors("rg"))
+                    FireOutlinedTextField(value = rgOrgaoEmissor, onValueChange = { rgOrgaoEmissor = it.uppercase(java.util.Locale("pt", "BR")) }, label = "Órgão Emissor", colors = getFieldColors("rg_orgao_emissor"))
+                    FireOutlinedTextField(value = rgUf, onValueChange = { rgUf = it.uppercase(java.util.Locale("pt", "BR")) }, label = "UF do Órgão", colors = getFieldColors("rg_uf"))
+                }
+            }
         }
     }
 }
@@ -2159,34 +2535,81 @@ fun AddVehicleDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
         ) {
-            FireOutlinedTextField(value = placa, onValueChange = { placa = it }, label = "Placa", colors = getFieldColors("placa"))
-            FireOutlinedTextField(value = modelo, onValueChange = { modelo = it }, label = "Modelo", colors = getFieldColors("marca_modelo"))
-            FireOutlinedTextField(value = cor, onValueChange = { cor = it }, label = "Cor", colors = getFieldColors("cor"))
-            FireOutlinedTextField(value = chassi, onValueChange = { chassi = it }, label = "Chassi", colors = getFieldColors("chassi"))
-            FireOutlinedTextField(value = ano, onValueChange = { ano = it }, label = "Ano", colors = getFieldColors("ano_modelo"))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🚗 Identificação do Veículo", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Dados de identificação e registro do veículo.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                    
+                    FireOutlinedTextField(value = placa, onValueChange = { placa = it.uppercase(java.util.Locale("pt", "BR")) }, label = "Placa", colors = getFieldColors("placa"))
+                    FireOutlinedTextField(value = modelo, onValueChange = { modelo = it }, label = "Modelo/Marca", colors = getFieldColors("marca_modelo"))
+                    FireOutlinedTextField(value = cor, onValueChange = { cor = it }, label = "Cor", colors = getFieldColors("cor"))
+                    FireOutlinedTextField(value = chassi, onValueChange = { chassi = it.uppercase(java.util.Locale("pt", "BR")) }, label = "Chassi", colors = getFieldColors("chassi"))
+                    FireOutlinedTextField(value = ano, onValueChange = { ano = it }, label = "Ano", colors = getFieldColors("ano_modelo"))
+                }
+            }
 
-            Spacer(modifier = Modifier.height(FireSpacing.Small))
-            Text("Proprietário do Veículo:", style = FireTypography.LabelLarge, fontWeight = FontWeight.Bold)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("👤 Proprietário", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Selecione a pessoa proprietária do veículo envolvido.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
 
-            Box(modifier = Modifier.fillMaxWidth()) {
-                FireOutlinedButton(
-                    text = if (selectedPessoaIndex >= 0 && selectedPessoaIndex < pessoasDisponiveis.size) {
-                        "${pessoasDisponiveis[selectedPessoaIndex].nome} (CPF: ${pessoasDisponiveis[selectedPessoaIndex].cpf ?: "N/D"})"
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        FireOutlinedButton(
+                            text = if (selectedPessoaIndex >= 0 && selectedPessoaIndex < pessoasDisponiveis.size) {
+                                "${pessoasDisponiveis[selectedPessoaIndex].nome} (CPF: ${pessoasDisponiveis[selectedPessoaIndex].cpf ?: "N/D"})"
+                            } else {
+                                "Selecione o Proprietário"
+                            },
+                            onClick = { expandedDropdown = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            icon = FireIcons.ArrowDropDown
+                        )
+                        DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
+                            pessoasDisponiveis.forEachIndexed { index, p ->
+                                DropdownMenuItem(text = { Text("${p.nome} - CPF: ${p.cpf ?: "N/D"}") }, onClick = {
+                                    selectedPessoaIndex = index
+                                    expandedDropdown = false
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("📄 Documento CRLV", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("CRLV anexado para este veículo.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+
+                    if (crlvImage != null) {
+                        Spacer(modifier = Modifier.height(FireSpacing.Small))
+                        Text("✅ Documento CRLV capturado com sucesso", color = FireColors.Success, fontWeight = FontWeight.Bold, style = FireTypography.BodyMedium)
                     } else {
-                        "Selecione o Proprietário"
-                    },
-                    onClick = { expandedDropdown = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = FireIcons.ArrowDropDown
-                )
-                DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
-                    pessoasDisponiveis.forEachIndexed { index, p ->
-                        DropdownMenuItem(text = { Text("${p.nome} - CPF: ${p.cpf ?: "N/D"}") }, onClick = {
-                            selectedPessoaIndex = index
-                            expandedDropdown = false
-                        })
+                        Text("Nenhum CRLV capturado para este veículo.", style = FireTypography.BodyMedium, color = Color.Gray)
                     }
                 }
             }
@@ -2263,70 +2686,123 @@ fun AddVictimDialogV2(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
         ) {
-            Text("Pessoa Atendida:", style = FireTypography.LabelLarge, fontWeight = FontWeight.Bold)
-            Box(modifier = Modifier.fillMaxWidth()) {
-                FireOutlinedButton(
-                    text = if (selectedPessoaIndex >= 0 && selectedPessoaIndex < pessoasDisponiveis.size) {
-                        pessoasDisponiveis[selectedPessoaIndex].nome
-                    } else {
-                        "Selecione a Pessoa"
-                    },
-                    onClick = { expandedDropdown = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = FireIcons.ArrowDropDown
-                )
-                DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
-                    pessoasDisponiveis.forEachIndexed { index, p ->
-                        DropdownMenuItem(text = { Text(p.nome) }, onClick = {
-                            selectedPessoaIndex = index
-                            expandedDropdown = false
-                        })
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("👤 Identificação da Vítima", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Selecione a pessoa e informe o estado.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        FireOutlinedButton(
+                            text = if (selectedPessoaIndex >= 0 && selectedPessoaIndex < pessoasDisponiveis.size) {
+                                pessoasDisponiveis[selectedPessoaIndex].nome
+                            } else {
+                                "Selecione a Pessoa"
+                            },
+                            onClick = { expandedDropdown = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            icon = FireIcons.ArrowDropDown
+                        )
+                        DropdownMenu(expanded = expandedDropdown, onDismissRequest = { expandedDropdown = false }) {
+                            pessoasDisponiveis.forEachIndexed { index, p ->
+                                DropdownMenuItem(text = { Text(p.nome) }, onClick = {
+                                    selectedPessoaIndex = index
+                                    expandedDropdown = false
+                                })
+                            }
+                        }
                     }
+
+                    FireOutlinedTextField(value = resultado, onValueChange = { resultado = it }, label = "Resultado / Estado")
                 }
             }
 
-            FireOutlinedTextField(value = lesoes, onValueChange = { lesoes = it }, label = "Lesões Aparentes")
-            FireOutlinedTextField(value = outroDestino, onValueChange = { outroDestino = it }, label = "Destino")
-            FireOutlinedTextField(value = quemSocorreu, onValueChange = { quemSocorreu = it }, label = "Quem Socorreu")
-            FireOutlinedTextField(value = resultado, onValueChange = { resultado = it }, label = "Resultado / Estado")
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🩺 Avaliação e Sinais Vitais", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Parâmetros clínicos avaliados no local.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
 
-            Text("Viatura de Socorro:", style = FireTypography.LabelLarge, fontWeight = FontWeight.Bold)
-            Box(modifier = Modifier.fillMaxWidth()) {
-                FireOutlinedButton(
-                    text = if (selectedViaturaSocorroIndex >= 0 && selectedViaturaSocorroIndex < viaturasDisponiveis.size) {
-                        viaturasDisponiveis[selectedViaturaSocorroIndex].prefixo
-                    } else {
-                        "Selecione a Viatura"
-                    },
-                    onClick = { expandedViaturaSocorroDropdown = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = FireIcons.ArrowDropDown
-                )
-                DropdownMenu(expanded = expandedViaturaSocorroDropdown, onDismissRequest = { expandedViaturaSocorroDropdown = false }) {
-                    viaturasDisponiveis.forEachIndexed { index, v ->
-                        DropdownMenuItem(text = { Text(v.prefixo) }, onClick = {
-                            selectedViaturaSocorroIndex = index
-                            expandedViaturaSocorroDropdown = false
-                        })
+                    Row(horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)) {
+                        FireOutlinedTextField(value = pulso, onValueChange = { pulso = it }, label = "FC (BPM)", modifier = Modifier.weight(1f))
+                        FireOutlinedTextField(value = pa, onValueChange = { pa = it }, label = "P.A.", modifier = Modifier.weight(1f))
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)) {
+                        FireOutlinedTextField(value = satO2, onValueChange = { satO2 = it }, label = "Sat. O2 (%)", modifier = Modifier.weight(1f))
+                        FireOutlinedTextField(value = temp, onValueChange = { temp = it }, label = "Temp (°C)", modifier = Modifier.weight(1f))
+                    }
+                    FireOutlinedTextField(value = gcs, onValueChange = { gcs = it }, label = "Escala Glasgow (GCS)")
                 }
             }
 
-            FireOutlinedTextField(value = hospitalDestino, onValueChange = { hospitalDestino = it }, label = "Hospital de Destino")
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🩹 Lesões Aparentes", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Descreva as lesões observadas na vítima.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
 
-            Spacer(modifier = Modifier.height(FireSpacing.Small))
-            Text("Sinais Vitais", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)) {
-                FireOutlinedTextField(value = pulso, onValueChange = { pulso = it }, label = "Pulso (BPM)", modifier = Modifier.weight(1f))
-                FireOutlinedTextField(value = pa, onValueChange = { pa = it }, label = "P.A.", modifier = Modifier.weight(1f))
+                    FireOutlinedTextField(value = lesoes, onValueChange = { lesoes = it }, label = "Descrição das Lesões")
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)) {
-                FireOutlinedTextField(value = satO2, onValueChange = { satO2 = it }, label = "Sat. O2 (%)", modifier = Modifier.weight(1f))
-                FireOutlinedTextField(value = temp, onValueChange = { temp = it }, label = "Temp (°C)", modifier = Modifier.weight(1f))
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🚑 Transporte e Socorro", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    Text("Dados do destino e viatura de transporte.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        FireOutlinedButton(
+                            text = if (selectedViaturaSocorroIndex >= 0 && selectedViaturaSocorroIndex < viaturasDisponiveis.size) {
+                                viaturasDisponiveis[selectedViaturaSocorroIndex].prefixo
+                            } else {
+                                "Selecione a Viatura de Socorro"
+                            },
+                            onClick = { expandedViaturaSocorroDropdown = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            icon = FireIcons.ArrowDropDown
+                        )
+                        DropdownMenu(expanded = expandedViaturaSocorroDropdown, onDismissRequest = { expandedViaturaSocorroDropdown = false }) {
+                            viaturasDisponiveis.forEachIndexed { index, v ->
+                                DropdownMenuItem(text = { Text(v.prefixo) }, onClick = {
+                                    selectedViaturaSocorroIndex = index
+                                    expandedViaturaSocorroDropdown = false
+                                })
+                            }
+                        }
+                    }
+
+                    FireOutlinedTextField(value = hospitalDestino, onValueChange = { hospitalDestino = it }, label = "Hospital / Destino")
+                    FireOutlinedTextField(value = outroDestino, onValueChange = { outroDestino = it }, label = "Destino Geral")
+                    FireOutlinedTextField(value = quemSocorreu, onValueChange = { quemSocorreu = it }, label = "Quem Socorreu / Responsável")
+                }
             }
-            FireOutlinedTextField(value = gcs, onValueChange = { gcs = it }, label = "Escala Glasgow")
         }
     }
 }

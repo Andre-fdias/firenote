@@ -436,6 +436,7 @@ class OccurrenceFormViewModel @Inject constructor(
                         )
                         
                         repository.addDocumento(documento).onSuccess { savedDoc ->
+                            android.util.Log.d("FireNotes", "Persistência - Documento salvo: ID=${savedDoc.id}, Tipo=${savedDoc.tipo}")
                             _uiState.update { state ->
                                 state.copy(
                                     isLoading = false,
@@ -510,6 +511,7 @@ class OccurrenceFormViewModel @Inject constructor(
                 )
 
                 repository.addVeiculoEnvolvido(veiculo).onSuccess { saved ->
+                    android.util.Log.d("FireNotes", "Persistência - Veículo salvo: ID=${saved.id}, Placa=${saved.placa}")
                     _uiState.update { state ->
                         state.copy(
                             isLoading = false,
@@ -669,7 +671,7 @@ class OccurrenceFormViewModel @Inject constructor(
             )
             repository.addViatura(viatura)
                 .onSuccess { saved ->
-                    android.util.Log.d("FireNotes", "Viatura salva - ID ocorrência: ${saved.ocorrenciaId}, ID viatura: ${saved.id}, Prefixo: ${saved.prefixo}, Timestamp: ${System.currentTimeMillis()}")
+                    android.util.Log.d("FireNotes", "Persistência - Viatura salva: ID=${saved.id}, Prefixo=${saved.prefixo}")
                     _uiState.update { state ->
                         val updatedList = if (viaturaId != null) {
                             state.viaturas.map { if (it.id == viaturaId) saved else it }
@@ -835,6 +837,7 @@ class OccurrenceFormViewModel @Inject constructor(
                 // 5. Run OCR Service on the treated image in background
                 ocrService.recognizeText(processedUri)
                     .onSuccess { result ->
+                        android.util.Log.d("FireNotes", "OCR - Documento identificado: Tipo=${result.tipo}")
                         _uiState.update { it.copy(isLoading = false) }
                         onSuccess(result, processedUri)
                     }
@@ -880,6 +883,7 @@ class OccurrenceFormViewModel @Inject constructor(
 
                 ocrService.recognizeText(processedUri)
                     .onSuccess { result ->
+                        android.util.Log.d("FireNotes", "OCR - Documento identificado: Tipo=${result.tipo}")
                         _uiState.update { it.copy(isLoading = false) }
                         onSuccess(result, processedUri)
                     }
@@ -910,6 +914,7 @@ class OccurrenceFormViewModel @Inject constructor(
                         urlStorage = url
                     )
                     repository.addEvidencia(ev).onSuccess { saved ->
+                        android.util.Log.d("FireNotes", "Persistência - Evidência salva: ID=${saved.id}, Tipo=${saved.tipo}")
                         _uiState.update { state ->
                             state.copy(isLoading = false, evidencias = state.evidencias + saved)
                         }

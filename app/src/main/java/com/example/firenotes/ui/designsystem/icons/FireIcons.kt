@@ -47,4 +47,5 @@ object FireIcons {
     val LocationOn: ImageVector = Icons.Rounded.LocationOn
     val FileOpen: ImageVector = Icons.Rounded.FileOpen
     val FileDownload: ImageVector = Icons.Rounded.FileDownload
+    val PhotoCamera: ImageVector = Icons.Rounded.PhotoCamera
 }
