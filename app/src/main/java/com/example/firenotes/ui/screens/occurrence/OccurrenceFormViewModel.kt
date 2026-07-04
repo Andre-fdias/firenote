@@ -644,7 +644,8 @@ class OccurrenceFormViewModel @Inject constructor(
         unidade: String?,
         kmSaida: Int?,
         kmLocal: Int?,
-        observacoes: String?
+        observacoes: String?,
+        viaturaId: String? = null
     ) {
         val occurrenceId = _uiState.value.id ?: return
         if (prefixo.isBlank()) {
@@ -654,6 +655,7 @@ class OccurrenceFormViewModel @Inject constructor(
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
             val viatura = Viatura(
+                id = viaturaId,
                 ocorrenciaId = occurrenceId,
                 prefixo = prefixo,
                 tipo = tipo,
@@ -665,9 +667,14 @@ class OccurrenceFormViewModel @Inject constructor(
             repository.addViatura(viatura)
                 .onSuccess { saved ->
                     _uiState.update { state ->
+                        val updatedList = if (viaturaId != null) {
+                            state.viaturas.map { if (it.id == viaturaId) saved else it }
+                        } else {
+                            state.viaturas + saved
+                        }
                         state.copy(
                             isLoading = false,
-                            viaturas = state.viaturas + saved
+                            viaturas = updatedList
                         )
                     }
                 }

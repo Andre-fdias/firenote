@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,8 +19,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -120,6 +123,7 @@ fun OccurrenceFormScreen(
     var showAddVehicleDialog by remember { mutableStateOf(false) }
     var showAddVictimDialog by remember { mutableStateOf(false) }
     var showAddViaturaDialog by remember { mutableStateOf(false) }
+    var viaturaToEdit by remember { mutableStateOf<Viatura?>(null) }
     var showAddMilitarDialog by remember { mutableStateOf(false) }
     var showMoveMilitarDialog by remember { mutableStateOf(false) }
     
@@ -838,6 +842,7 @@ fun OccurrenceFormScreen(
                                         ViaturasModuleView(
                                             uiState = uiState,
                                             onNewViaturaClick = { showAddViaturaDialog = true },
+                                            onEditViaturaClick = { viaturaToEdit = it },
                                             onDeleteViatura = viewModel::deleteViatura,
                                             onBack = autoSaveAndCloseModule
                                         )
@@ -981,13 +986,18 @@ fun OccurrenceFormScreen(
         )
     }
 
-    // Dialog: Add Viatura
-    if (showAddViaturaDialog) {
+    // Dialog: Add/Edit Viatura
+    if (showAddViaturaDialog || viaturaToEdit != null) {
         AddViaturaDialog(
-            onDismiss = { showAddViaturaDialog = false },
-            onConfirm = { prefixo, tipo, unidade, kmSaida, kmLocal, obs ->
-                viewModel.addViatura(prefixo, tipo, unidade, kmSaida, kmLocal, obs)
+            viatura = viaturaToEdit,
+            onDismiss = {
                 showAddViaturaDialog = false
+                viaturaToEdit = null
+            },
+            onConfirm = { prefixo, tipo, unidade, kmSaida, kmLocal, obs ->
+                viewModel.addViatura(prefixo, tipo, unidade, kmSaida, kmLocal, obs, viaturaToEdit?.id)
+                showAddViaturaDialog = false
+                viaturaToEdit = null
             }
         )
     }
@@ -1405,48 +1415,176 @@ private fun AddressModuleView(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ViaturasModuleView(
     uiState: OccurrenceFormUiState,
     onNewViaturaClick: () -> Unit,
+    onEditViaturaClick: (Viatura) -> Unit,
     onDeleteViatura: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        FireButton(onClick = onNewViaturaClick, text = "+ Adicionar Viatura", modifier = Modifier.fillMaxWidth())
-        Spacer(modifier = Modifier.height(FireSpacing.Medium))
-        
-        if (uiState.viaturas.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nenhuma viatura registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(uiState.viaturas) { viatura ->
-                    FireCard {
-                        Row(
-                            modifier = Modifier.padding(FireSpacing.Medium),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                Text("🚒🚒 ", style = FireTypography.HeadlineMedium)
+                Column {
+                    Text("Viatura", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                    Text("Cadastre os dados da viatura utilizada nesta ocorrência.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                }
+            }
+
+            if (uiState.viaturas.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Nenhuma viatura registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(
+                        items = uiState.viaturas,
+                        key = { it.id ?: it.prefixo }
+                    ) { viatura ->
+                        val startVal = viatura.kmSaida ?: 0
+                        val endVal = viatura.kmLocal ?: 0
+                        val diff = if (endVal >= startVal) endVal - startVal else 0
+                        
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
                         ) {
-                            Column {
-                                Text("🚒 Viatura: ${viatura.prefixo}", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                                Text("Tipo: ${viatura.tipo} | KM Saída: ${viatura.kmSaida ?: "N/D"}", style = FireTypography.Caption)
+                            Column(modifier = Modifier.padding(FireSpacing.Medium)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("🚒🚒 ", style = FireTypography.Title)
+                                        Text(viatura.prefixo, style = FireTypography.Title, fontWeight = FontWeight.Bold)
+                                    }
+                                    
+                                    val count = viatura.equipe.size
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("👨🚒 ", style = FireTypography.LabelMedium)
+                                        Text(
+                                            text = "$count militar${if (count != 1) "es" else ""}",
+                                            style = FireTypography.LabelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = FireColors.Primary
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+                                
+                                Text(
+                                    text = viatura.unidade ?: "Unidade não especificada",
+                                    style = FireTypography.BodyMedium,
+                                    color = FireColors.OnSurfaceVariant
+                                )
+
+                                Spacer(modifier = Modifier.height(FireSpacing.Small))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("KM", style = FireTypography.LabelSmall, color = FireColors.OnSurfaceVariant)
+                                        Text(
+                                            text = "${viatura.kmSaida ?: 0} → ${viatura.kmLocal ?: 0}",
+                                            style = FireTypography.BodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text("Percorrido", style = FireTypography.LabelSmall, color = FireColors.OnSurfaceVariant)
+                                        Text(
+                                            text = "$diff km",
+                                            style = FireTypography.BodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = FireColors.Primary
+                                        )
+                                    }
+                                }
+
+                                if (!viatura.observacoes.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(FireSpacing.Small))
+                                    Text(
+                                        text = "Obs: ${viatura.observacoes}",
+                                        style = FireTypography.LabelSmall,
+                                        color = FireColors.OnSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.Small))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(
+                                        onClick = { onEditViaturaClick(viatura) },
+                                        colors = ButtonDefaults.textButtonColors(contentColor = FireColors.Primary)
+                                    ) {
+                                        Text("✏ Editar")
+                                    }
+                                    Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                    TextButton(
+                                        onClick = { onDeleteViatura(viatura.id!!) },
+                                        colors = ButtonDefaults.textButtonColors(contentColor = FireColors.Error)
+                                    ) {
+                                        Text("🗑 Remover")
+                                    }
+                                }
                             }
-                            FireIconButton(icon = FireIcons.Delete, onClick = { onDeleteViatura(viatura.id!!) }, tint = FireColors.Error)
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(FireSpacing.Small))
+            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
         }
-        FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+
+        // Floating Action Button (FAB) at bottom right
+        FloatingActionButton(
+            onClick = onNewViaturaClick,
+            containerColor = FireColors.Primary,
+            contentColor = androidx.compose.ui.graphics.Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 60.dp, end = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(imageVector = FireIcons.Add, contentDescription = "Nova Viatura")
+                Spacer(modifier = Modifier.width(FireSpacing.ExtraSmall))
+                Text("Nova Viatura", fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
@@ -2195,28 +2333,49 @@ fun AddVictimDialogV2(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddViaturaDialog(
+    viatura: Viatura? = null,
     onDismiss: () -> Unit,
     onConfirm: (prefixo: String, tipo: String, unidade: String?, kmSaida: Int?, kmLocal: Int?, observacoes: String?) -> Unit
 ) {
-    var prefixo by remember { mutableStateOf("") }
-    var tipo by remember { mutableStateOf("UR") }
-    var unidade by remember { mutableStateOf("") }
-    var kmSaida by remember { mutableStateOf("") }
-    var kmLocal by remember { mutableStateOf("") }
-    var observacoes by remember { mutableStateOf("") }
+    var prefixo by remember { mutableStateOf(viatura?.prefixo ?: "") }
+    val tipo = remember { viatura?.tipo ?: "UR" }
+    var unidade by remember { mutableStateOf(viatura?.unidade ?: "") }
+    var kmSaidaRaw by remember { mutableStateOf(viatura?.kmSaida?.toString() ?: "") }
+    var kmLocalRaw by remember { mutableStateOf(viatura?.kmLocal?.toString() ?: "") }
+    var observacoes by remember { mutableStateOf(viatura?.observacoes ?: "") }
+
+    val sa = kmSaidaRaw.toIntOrNull()
+    val qu = kmLocalRaw.toIntOrNull()
+    val isKmInvalid = sa != null && qu != null && qu < sa
+
+    val isComplete = prefixo.isNotBlank() && unidade.isNotBlank() && kmSaidaRaw.isNotBlank() && kmLocalRaw.isNotBlank() && !isKmInvalid
+
+    fun formatNumber(input: String): String {
+        val digits = input.filter { it.isDigit() }
+        if (digits.isEmpty()) return ""
+        val number = digits.toLongOrNull() ?: return ""
+        return java.text.NumberFormat.getInstance(java.util.Locale("pt", "BR")).format(number)
+    }
+
+    val distancia = remember(kmSaidaRaw, kmLocalRaw) {
+        val startVal = kmSaidaRaw.toIntOrNull() ?: 0
+        val endVal = kmLocalRaw.toIntOrNull() ?: 0
+        if (endVal >= startVal) endVal - startVal else 0
+    }
 
     FireDialog(
         onDismissRequest = onDismiss,
-        title = "Adicionar Viatura",
+        title = if (viatura == null) "Adicionar Viatura" else "Editar Viatura",
         confirmButton = {
             FireButton(
-                enabled = prefixo.isNotBlank(),
+                enabled = prefixo.isNotBlank() && !isKmInvalid,
                 onClick = {
                     onConfirm(
-                        prefixo, tipo,
+                        prefixo.uppercase().trim(),
+                        tipo,
                         unidade.ifBlank { null },
-                        kmSaida.toIntOrNull(),
-                        kmLocal.toIntOrNull(),
+                        kmSaidaRaw.toIntOrNull(),
+                        kmLocalRaw.toIntOrNull(),
                         observacoes.ifBlank { null }
                     )
                 },
@@ -2231,14 +2390,144 @@ fun AddViaturaDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
         ) {
-            FireOutlinedTextField(value = prefixo, onValueChange = { prefixo = it }, label = "Prefixo")
-            FireOutlinedTextField(value = tipo, onValueChange = { tipo = it }, label = "Tipo (Ex: UR, ABS, ASE)")
-            FireOutlinedTextField(value = unidade, onValueChange = { unidade = it }, label = "Unidade/Batalhão")
-            FireOutlinedTextField(value = kmSaida, onValueChange = { kmSaida = it }, label = "KM Saída")
-            FireOutlinedTextField(value = kmLocal, onValueChange = { kmLocal = it }, label = "KM Local")
-            FireOutlinedTextField(value = observacoes, onValueChange = { observacoes = it }, label = "Observações")
+            // Status Chip indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isComplete) {
+                    Text(
+                        text = "🟢🟢 Dados completos",
+                        color = FireColors.Success,
+                        style = FireTypography.LabelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        text = "🟠🟠 Faltam informações",
+                        color = FireColors.Warning,
+                        style = FireTypography.LabelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // CARD 1: Identificação
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🚒 Identificação", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    
+                    FireOutlinedTextField(
+                        value = prefixo,
+                        onValueChange = { prefixo = it.uppercase() },
+                        label = "Prefixo",
+                        placeholder = { Text("Ex.: UR-12345") }
+                    )
+
+                    val unidadeOptions = remember {
+                        listOf("10º GB", "15º GB", "Posto Avançado", "Base Operacional", "Estação")
+                    }
+                    FireDropdown(
+                        selectedOption = unidade,
+                        options = unidadeOptions,
+                        onOptionSelected = { unidade = it },
+                        label = "Unidade/Batalhão",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            // CARD 2: Quilometragem
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(FireSpacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("🛣 Quilometragem", style = FireTypography.Title, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    
+                    FireOutlinedTextField(
+                        value = formatNumber(kmSaidaRaw),
+                        onValueChange = { kmSaidaRaw = it.filter { char -> char.isDigit() } },
+                        label = "KM Saída",
+                        placeholder = { Text("Ex.: 125430") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        suffix = { Text("km", style = FireTypography.BodyMedium) }
+                    )
+
+                    FireOutlinedTextField(
+                        value = formatNumber(kmLocalRaw),
+                        onValueChange = { kmLocalRaw = it.filter { char -> char.isDigit() } },
+                        label = "KM Quartel",
+                        placeholder = { Text("Ex.: 125470") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        error = isKmInvalid,
+                        suffix = { Text("km", style = FireTypography.BodyMedium) }
+                    )
+
+                    if (isKmInvalid) {
+                        Text(
+                            text = "O KM de retorno ao quartel não pode ser menor que o KM de saída.",
+                            color = FireColors.Error,
+                            style = FireTypography.LabelSmall,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Distância Percorrida:", style = FireTypography.BodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = "${formatNumber(distancia.toString()).ifBlank { "0" }} km",
+                            style = FireTypography.Title,
+                            fontWeight = FontWeight.Bold,
+                            color = FireColors.Primary
+                        )
+                    }
+                }
+            }
+
+            // Observações
+            OutlinedTextField(
+                value = observacoes,
+                onValueChange = { if (it.length <= 1000) observacoes = it },
+                label = { Text("Observações", style = FireTypography.BodyMedium) },
+                placeholder = { Text("Ex.: Viatura abastecida, pane elétrica...", style = FireTypography.BodyMedium) },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 5,
+                shape = FireShapes.Medium,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = FireColors.Primary,
+                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                    focusedLabelColor = FireColors.Primary,
+                    unfocusedLabelColor = FireColors.OnSurfaceVariant
+                )
+            )
+            Text(
+                text = "${observacoes.length}/1000 caracteres",
+                style = FireTypography.LabelSmall,
+                color = FireColors.OnSurfaceVariant,
+                modifier = Modifier.align(Alignment.End)
+            )
         }
     }
 }
