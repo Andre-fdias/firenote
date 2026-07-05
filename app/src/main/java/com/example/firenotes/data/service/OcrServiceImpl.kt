@@ -28,23 +28,28 @@ class OcrServiceImpl @Inject constructor(
             val image = InputImage.fromFilePath(context, imageUri)
             recognizer.process(image)
                 .addOnSuccessListener { visionText ->
-                    val rawText = visionText.text
-                    val tipo = detectDocumentType(rawText)
-                    val fields = parseDocumentFields(tipo, rawText)
-                    
-                    // Estimate confidence level for each field (simulating V4 ML Kit element extraction confidence)
-                    val fieldsWithConfidence = fields.mapValues { (key, value) ->
-                        val confidence = calculateConfidence(key, value)
-                        OcrField(value, confidence)
-                    }
+                    if (continuation.isActive) {
+                        val rawText = visionText.text
+                        val tipo = detectDocumentType(rawText)
+                        val fields = parseDocumentFields(tipo, rawText)
+                        
+                        val fieldsWithConfidence = fields.mapValues { (key, value) ->
+                            val confidence = calculateConfidence(key, value)
+                            OcrField(value, confidence)
+                        }
 
-                    continuation.resume(Result.success(OcrDocumentResult(tipo, rawText, fields, fieldsWithConfidence)))
+                        continuation.resume(Result.success(OcrDocumentResult(tipo, rawText, fields, fieldsWithConfidence)))
+                    }
                 }
                 .addOnFailureListener { exception ->
-                    continuation.resume(Result.failure(exception))
+                    if (continuation.isActive) {
+                        continuation.resume(Result.failure(exception))
+                    }
                 }
         } catch (e: Exception) {
-            continuation.resume(Result.failure(e))
+            if (continuation.isActive) {
+                continuation.resume(Result.failure(e))
+            }
         }
     }
 

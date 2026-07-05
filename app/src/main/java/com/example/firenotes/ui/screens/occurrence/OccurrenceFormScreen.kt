@@ -2,6 +2,7 @@ package com.example.firenotes.ui.screens.occurrence
 
 import android.net.Uri
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -133,14 +134,16 @@ fun OccurrenceFormScreen(
     var activeMilitarToMove by remember { mutableStateOf<Militar?>(null) }
     
     var ocrResultData by remember { mutableStateOf<OcrDocumentResult?>(null) }
-    var crlvImageUri by remember { mutableStateOf<Uri?>(null) }
+    var crlvImageUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val crlvImageUri = crlvImageUriString?.let { Uri.parse(it) }
     
     // Pickers and Launchers
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
-    var activeOcrScanType by remember { mutableStateOf("") } // "DOCUMENTO" or "CRLV"
+    var tempPhotoUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val tempPhotoUri = tempPhotoUriString?.let { Uri.parse(it) }
+    var activeOcrScanType by rememberSaveable { mutableStateOf("") } // "DOCUMENTO" or "CRLV"
 
     var selectedNaturezaForCreation by remember { mutableStateOf(NaturezaOcorrencia.PESSOAL) }
     var isGpsMethod by remember { mutableStateOf(true) }
@@ -276,10 +279,10 @@ fun OccurrenceFormScreen(
                 onSuccess = { result, processedUri ->
                     ocrResultData = result
                     if (activeOcrScanType == "CRLV") {
-                        crlvImageUri = processedUri
+                        crlvImageUriString = processedUri.toString()
                         showAddVehicleDialog = true
                     } else {
-                        tempPhotoUri = processedUri
+                        tempPhotoUriString = processedUri.toString()
                         showAddDocDialog = true
                     }
                 }
@@ -297,7 +300,8 @@ fun OccurrenceFormScreen(
     }
 
     // Camera launcher for Evidence
-    var evidencePhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var evidencePhotoUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val evidencePhotoUri = evidencePhotoUriString?.let { Uri.parse(it) }
     var showClassificationDialog by remember { mutableStateOf(false) }
     val evidenceLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -314,11 +318,11 @@ fun OccurrenceFormScreen(
             try {
                 if (activeOcrScanType == "EVIDENCIA") {
                     val uri = viewModel.createPhotoUri()
-                    evidencePhotoUri = uri
+                    evidencePhotoUriString = uri.toString()
                     evidenceLauncher.launch(uri)
                 } else if (activeOcrScanType == "CRLV" || activeOcrScanType == "DOCUMENTO") {
                     val uri = viewModel.createPhotoUri()
-                    tempPhotoUri = uri
+                    tempPhotoUriString = uri.toString()
                     takePictureLauncher.launch(uri)
                 }
             } catch (e: Exception) {
@@ -344,10 +348,10 @@ fun OccurrenceFormScreen(
             try {
                 val newUri = viewModel.createPhotoUri()
                 if (scanType == "EVIDENCIA") {
-                    evidencePhotoUri = newUri
+                    evidencePhotoUriString = newUri.toString()
                     evidenceLauncher.launch(newUri)
                 } else {
-                    tempPhotoUri = newUri
+                    tempPhotoUriString = newUri.toString()
                     takePictureLauncher.launch(newUri)
                 }
                 android.util.Log.d("FireNotes", "Camera - URI criada: $newUri")
@@ -401,7 +405,7 @@ fun OccurrenceFormScreen(
                             icon = FireIcons.Add,
                             onClick = {
                                 ocrResultData = null
-                                crlvImageUri = null
+                                crlvImageUriString = null
                                 showAddVehicleDialog = true
                             }
                         )
@@ -921,7 +925,7 @@ fun OccurrenceFormScreen(
                                             uiState = uiState,
                                             onNewVehicleClick = {
                                                 ocrResultData = null
-                                                crlvImageUri = null
+                                                crlvImageUriString = null
                                                 showAddVehicleDialog = true
                                             },
                                             onScanCrlvClick = {
@@ -986,6 +990,18 @@ fun OccurrenceFormScreen(
                             }
                         }
                     }
+                }
+            }
+
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(enabled = false, onClick = {}),
+                    contentAlignment = Alignment.Center
+                ) {
+                    FireLoading()
                 }
             }
         }

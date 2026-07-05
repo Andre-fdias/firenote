@@ -177,6 +177,7 @@ class OccurrenceFormViewModel @Inject constructor(
 
     fun updateInitialFields(talao: String, data: String, hora: String) {
         _uiState.update { it.copy(protocolo = talao, data = data, hora = hora) }
+        saveOccurrenceDraft()
     }
 
     fun updateManualAddress(rua: String, numero: String, bairro: String, cidade: String, uf: String) {
@@ -189,6 +190,7 @@ class OccurrenceFormViewModel @Inject constructor(
                 uf = uf
             )
         }
+        saveOccurrenceDraft()
     }
 
     fun captureLocationAndAddress() {
@@ -199,6 +201,7 @@ class OccurrenceFormViewModel @Inject constructor(
                     val lat = pair.first
                     val lng = pair.second
                     _uiState.update { it.copy(latitude = lat, longitude = lng) }
+                    saveOccurrenceDraft()
                     
                     // Reverse geocoding
                     locationService.getAddressFromLocation(lat, lng)
@@ -213,6 +216,7 @@ class OccurrenceFormViewModel @Inject constructor(
                                     uf = address.uf
                                 )
                             }
+                            saveOccurrenceDraft()
                         }
                         .onFailure { error ->
                             _uiState.update { 
@@ -304,6 +308,7 @@ class OccurrenceFormViewModel @Inject constructor(
 
     fun updateHistorico(historico: String) {
         _uiState.update { it.copy(historico = historico) }
+        saveOccurrenceDraft()
     }
 
     fun addApoio(orgao: OrgaoApoio, viatura: String, encarregado: String) {
@@ -659,6 +664,7 @@ class OccurrenceFormViewModel @Inject constructor(
         }
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
+            val existingViatura = _uiState.value.viaturas.find { it.id == viaturaId }
             val viatura = Viatura(
                 id = viaturaId,
                 ocorrenciaId = occurrenceId,
@@ -667,7 +673,8 @@ class OccurrenceFormViewModel @Inject constructor(
                 unidade = unidade,
                 kmSaida = kmSaida,
                 kmLocal = kmLocal,
-                observacoes = observacoes
+                observacoes = observacoes,
+                equipe = existingViatura?.equipe ?: emptyList()
             )
             repository.addViatura(viatura)
                 .onSuccess { saved ->
@@ -928,5 +935,55 @@ class OccurrenceFormViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Erro ler arquivo: ${error.localizedMessage}") }
             }
         }
+    }
+
+    fun saveOccurrenceDraft() {
+        val occurrenceId = _uiState.value.id ?: return
+        val state = _uiState.value
+        viewModelScope.launch {
+            try {
+                val instant = try {
+                    val formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+                    val localDateTime = java.time.LocalDateTime.parse("${state.data} ${state.hora}", formatter)
+                    localDateTime.atZone(java.time.ZoneId.systemDefault()).toInstant()
+                } catch (e: Exception) {
+                    Instant.now()
+                }
+                
+                val occurrence = Ocorrencia(
+                    id = occurrenceId,
+                    protocolo = state.protocolo,
+                    natureza = state.natureza,
+                    latitude = state.latitude,
+                    longitude = state.longitude,
+                    dataHora = instant,
+                    historico = state.historico,
+                    fotos = state.fotos,
+                    rua = state.rua,
+                    numero = state.numero,
+                    bairro = state.bairro,
+                    cidade = state.cidade,
+                    uf = state.uf
+                )
+                repository.createOcorrencia(occurrence)
+                    .onSuccess {
+                        logPersistenceSuccess("Ocorrência", "Rascunho atualizado ID=$occurrenceId")
+                    }
+                    .onFailure { error ->
+                        logPersistenceError("Ocorrência", "saveOccurrenceDraft", error)
+                    }
+            } catch (e: Exception) {
+                logPersistenceError("Ocorrência", "saveOccurrenceDraftOuter", e)
+            }
+        }
+    }
+
+    private fun logPersistenceSuccess(tag: String, message: String) {
+        android.util.Log.d("FireNotes", "Persistência - $tag: $message")
+    }
+
+    private fun logPersistenceError(tag: String, method: String, error: Throwable) {
+        val stackTraceStr = android.util.Log.getStackTraceString(error)
+        android.util.Log.e("FireNotes", "Persistência - ERRO em $method [${error.javaClass.simpleName}]: ${error.message}\n$stackTraceStr")
     }
 }

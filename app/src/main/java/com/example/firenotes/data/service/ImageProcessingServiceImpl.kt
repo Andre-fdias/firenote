@@ -55,33 +55,35 @@ class ImageProcessingServiceImpl @Inject constructor() : ImageProcessingService 
     }
 
     override suspend fun processDocumentImage(bitmap: Bitmap): Bitmap {
-        // 1. Correct rotation/alignment: if vertical or horizontal, ensure proper landscape/portrait alignment
-        var processed = if (bitmap.width > bitmap.height * 1.5) {
-            // Document is probably rotated, rotate 90 degrees to make it portrait
+        val isRotated = bitmap.width > bitmap.height * 1.5
+        val rotated = if (isRotated) {
             val matrix = Matrix().apply { postRotate(90f) }
             Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         } else {
             bitmap
         }
 
-        // 2. Crop margins (simulating crop bounds detection by cropping 5% border padding if needed)
-        val cropX = (processed.width * 0.02).toInt()
-        val cropY = (processed.height * 0.02).toInt()
-        val cropW = processed.width - (cropX * 2)
-        val cropH = processed.height - (cropY * 2)
-        if (cropW > 0 && cropH > 0) {
-            processed = Bitmap.createBitmap(processed, cropX, cropY, cropW, cropH)
+        val cropX = (rotated.width * 0.02).toInt()
+        val cropY = (rotated.height * 0.02).toInt()
+        val cropW = rotated.width - (cropX * 2)
+        val cropH = rotated.height - (cropY * 2)
+        val cropped = if (cropW > 0 && cropH > 0) {
+            val b = Bitmap.createBitmap(rotated, cropX, cropY, cropW, cropH)
+            if (rotated != bitmap) {
+                rotated.recycle()
+            }
+            b
+        } else {
+            rotated
         }
 
-        // 3. Contrast, sharpness enhancement and shadow reduction via ColorMatrix and Canvas
-        val enhanced = Bitmap.createBitmap(processed.width, processed.height, processed.config ?: Bitmap.Config.ARGB_8888)
+        val enhanced = Bitmap.createBitmap(cropped.width, cropped.height, cropped.config ?: Bitmap.Config.ARGB_8888)
         val canvas = Canvas(enhanced)
         val paint = Paint().apply {
             isAntiAlias = true
             isFilterBitmap = true
         }
 
-        // High contrast matrix (factor = 1.3f) + shadow reduction offset
         val contrast = 1.3f
         val translate = -15f
         val cm = ColorMatrix(floatArrayOf(
@@ -92,7 +94,11 @@ class ImageProcessingServiceImpl @Inject constructor() : ImageProcessingService 
         ))
         
         paint.colorFilter = ColorMatrixColorFilter(cm)
-        canvas.drawBitmap(processed, 0f, 0f, paint)
+        canvas.drawBitmap(cropped, 0f, 0f, paint)
+
+        if (cropped != bitmap) {
+            cropped.recycle()
+        }
 
         return enhanced
     }
