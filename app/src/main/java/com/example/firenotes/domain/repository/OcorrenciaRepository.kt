@@ -56,4 +56,7 @@ interface OcorrenciaRepository {
     suspend fun getTimelineEvents(ocorrenciaId: String): Result<List<TimelineEvent>>
     suspend fun addEvidencia(evidencia: Evidencia): Result<Evidencia>
     suspend fun getEvidencias(ocorrenciaId: String): Result<List<Evidencia>>
+    suspend fun deleteDocumento(id: String): Result<Unit>
+    suspend fun deleteVeiculo(id: String): Result<Unit>
+    suspend fun deleteEvidencia(id: String): Result<Unit>
 }

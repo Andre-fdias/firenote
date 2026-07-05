@@ -568,4 +568,16 @@ class RoomOcorrenciaRepository @Inject constructor(
         vitimas.forEach { addVitima(it.toDomain()) }
         orgaosApoioIds.forEach { orgaoId -> vincularOrgaoApoio(o.id ?: "", orgaoId) }
     }
+
+    override suspend fun deleteDocumento(id: String): Result<Unit> = runCatching {
+        ocorrenciaDao.deleteDocumento(id)
+    }
+
+    override suspend fun deleteVeiculo(id: String): Result<Unit> = runCatching {
+        ocorrenciaDao.deleteVeiculoOcorrencia(id)
+    }
+
+    override suspend fun deleteEvidencia(id: String): Result<Unit> = runCatching {
+        ocorrenciaDao.deleteEvidencia(id)
+    }
 }

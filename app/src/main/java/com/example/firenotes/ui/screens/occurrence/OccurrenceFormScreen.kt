@@ -52,6 +52,10 @@ import com.example.firenotes.ui.designsystem.components.widgets.FireDivider
 import com.example.firenotes.ui.designsystem.components.widgets.FireSectionHeader
 import com.example.firenotes.ui.designsystem.components.widgets.FireStatusChip
 import com.example.firenotes.ui.designsystem.states.FireLoading
+import com.example.firenotes.ui.designsystem.components.widgets.FireGalleryCard
+import com.example.firenotes.ui.designsystem.components.widgets.GalleryImage
+import com.example.firenotes.ui.designsystem.components.widgets.ImageViewerDialog
+import com.example.firenotes.ui.designsystem.components.widgets.LocalImage
 import java.time.Instant
 
 data class SubNatureza(
@@ -144,6 +148,53 @@ fun OccurrenceFormScreen(
     var tempPhotoUriString by rememberSaveable { mutableStateOf<String?>(null) }
     val tempPhotoUri = tempPhotoUriString?.let { Uri.parse(it) }
     var activeOcrScanType by rememberSaveable { mutableStateOf("") } // "DOCUMENTO" or "CRLV"
+
+    val allGalleryImages = remember(uiState) {
+        val list = mutableListOf<GalleryImage>()
+        uiState.documentos.filter { !it.urlImagem.isNullOrBlank() }.forEach { doc ->
+            list.add(GalleryImage(id = doc.id ?: "", path = doc.urlImagem ?: "", title = "Documento: ${doc.tipo}", category = "Documento", date = doc.dataUpload ?: "N/A", origin = doc.tipo))
+        }
+        uiState.veiculos.filter { !it.urlCrlv.isNullOrBlank() }.forEach { veic ->
+            list.add(GalleryImage(id = veic.id ?: "", path = veic.urlCrlv ?: "", title = "CRLV: ${veic.placa ?: ""}", category = "Veículo", date = "N/A", origin = "CRLV"))
+        }
+        uiState.evidencias.filter { !it.urlStorage.isNullOrBlank() }.forEach { ev ->
+            list.add(GalleryImage(id = ev.id ?: "", path = ev.urlStorage, title = "Evidência: ${ev.tipo}", category = "Evidência", date = ev.dataHora, origin = ev.tipo))
+        }
+        uiState.fotos.forEachIndexed { idx, path ->
+            list.add(GalleryImage(id = "foto_$idx", path = path, title = "Anexo ${idx + 1}", category = "Anexo", date = "N/A", origin = "Anexo"))
+        }
+        list
+    }
+
+    var viewerImageId by remember { mutableStateOf<String?>(null) }
+
+    val onDeleteImage: (GalleryImage) -> Unit = { img ->
+        when (img.category) {
+            "Documento" -> viewModel.deleteDocumento(img.id)
+            "Veículo" -> viewModel.deleteVeiculo(img.id)
+            "Evidência" -> viewModel.deleteEvidencia(img.id)
+            "Anexo" -> viewModel.removeFoto(img.path)
+        }
+    }
+
+    val onShareImage: (GalleryImage) -> Unit = { img ->
+        try {
+            val file = java.io.File(img.path)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "com.example.firenotes.fileprovider",
+                file
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "image/*"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(android.content.Intent.createChooser(intent, "Compartilhar Imagem"))
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(context, "Erro ao compartilhar imagem: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var selectedNaturezaForCreation by remember { mutableStateOf(NaturezaOcorrencia.PESSOAL) }
     var isGpsMethod by remember { mutableStateOf(true) }
@@ -931,6 +982,8 @@ fun OccurrenceFormScreen(
                                             onScanCrlvClick = {
                                                 launchCameraWithPermissionCheck("CRLV")
                                             },
+                                            galleryImages = allGalleryImages,
+                                            onImageClick = { viewerImageId = it.id },
                                             onBack = autoSaveAndCloseModule
                                         )
                                     }
@@ -944,6 +997,8 @@ fun OccurrenceFormScreen(
                                             onScanDocClick = {
                                                 launchCameraWithPermissionCheck("DOCUMENTO")
                                             },
+                                            galleryImages = allGalleryImages,
+                                            onImageClick = { viewerImageId = it.id },
                                             onBack = autoSaveAndCloseModule
                                         )
                                     }
@@ -975,6 +1030,8 @@ fun OccurrenceFormScreen(
                                             onTakePhoto = {
                                                 launchCameraWithPermissionCheck("EVIDENCIA")
                                             },
+                                            galleryImages = allGalleryImages,
+                                            onImageClick = { viewerImageId = it.id },
                                             onBack = autoSaveAndCloseModule
                                         )
                                     }
@@ -982,6 +1039,8 @@ fun OccurrenceFormScreen(
                                         AnexosModuleView(
                                             uiState = uiState,
                                             onAddMedia = { mediaPicker.launch("image/*") },
+                                            galleryImages = allGalleryImages,
+                                            onImageClick = { viewerImageId = it.id },
                                             onBack = autoSaveAndCloseModule
                                         )
                                     }
@@ -1715,6 +1774,8 @@ private fun VeiculosModuleView(
     uiState: OccurrenceFormUiState,
     onNewVehicleClick: () -> Unit,
     onScanCrlvClick: () -> Unit,
+    galleryImages: List<GalleryImage>,
+    onImageClick: (GalleryImage) -> Unit,
     onBack: () -> Unit
 ) {
     Box(
@@ -1722,93 +1783,108 @@ private fun VeiculosModuleView(
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = FireSpacing.Medium),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("🚗🚗 ", style = FireTypography.HeadlineMedium)
-                Column {
-                    Text("Veículos", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
-                    Text("Cadastre os veículos envolvidos nesta ocorrência.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+            contentPadding = PaddingValues(bottom = 120.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = FireSpacing.Medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🚗🚗 ", style = FireTypography.HeadlineMedium)
+                    Column {
+                        Text("Veículos", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                        Text("Cadastre os veículos envolvidos nesta ocorrência.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                    }
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = FireSpacing.Medium),
-                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-            ) {
-                FireButton(
-                    text = "Escanear CRLV",
-                    onClick = onScanCrlvClick,
-                    containerColor = FireColors.Secondary,
-                    modifier = Modifier.weight(1f),
-                    icon = FireIcons.PhotoCamera
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = FireSpacing.Medium),
+                    horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    FireButton(
+                        text = "Escanear CRLV",
+                        onClick = onScanCrlvClick,
+                        containerColor = FireColors.Secondary,
+                        modifier = Modifier.weight(1f),
+                        icon = FireIcons.PhotoCamera
+                    )
+                }
+            }
+
+            item {
+                FireGalleryCard(
+                    title = "Galeria de CRLVs",
+                    category = "Veículo",
+                    images = galleryImages,
+                    onImageClick = onImageClick
                 )
             }
 
             if (uiState.veiculos.isEmpty()) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Nenhum veículo registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                        Text("Nenhum veículo registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
+                    }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
-                    contentPadding = PaddingValues(bottom = 80.dp)
-                ) {
-                    items(
-                        items = uiState.veiculos,
-                        key = { it.id ?: it.placa ?: java.util.UUID.randomUUID().toString() }
-                    ) { veiculo ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateItem()
-                        ) {
-                            Column(modifier = Modifier.padding(FireSpacing.Medium)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("🚗 ", style = FireTypography.Title)
-                                        Text(veiculo.placa ?: "SEM PLACA", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                                    }
+                items(
+                    items = uiState.veiculos,
+                    key = { it.id ?: it.placa ?: java.util.UUID.randomUUID().toString() }
+                ) { veiculo ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem()
+                    ) {
+                        Column(modifier = Modifier.padding(FireSpacing.Medium)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🚗 ", style = FireTypography.Title)
+                                    Text(veiculo.placa ?: "SEM PLACA", style = FireTypography.Title, fontWeight = FontWeight.Bold)
                                 }
+                            }
 
+                            Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+
+                            Text(
+                                text = "Modelo: ${veiculo.modelo ?: "N/D"} | Cor: ${veiculo.cor ?: "N/D"}",
+                                style = FireTypography.BodyMedium,
+                                color = FireColors.OnSurfaceVariant
+                            )
+
+                            if (!veiculo.chassi.isNullOrBlank()) {
                                 Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
-
                                 Text(
-                                    text = "Modelo: ${veiculo.modelo ?: "N/D"} | Cor: ${veiculo.cor ?: "N/D"}",
-                                    style = FireTypography.BodyMedium,
-                                    color = FireColors.OnSurfaceVariant
+                                    text = "Chassi: ${veiculo.chassi}",
+                                    style = FireTypography.LabelSmall,
+                                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.8f)
                                 )
-
-                                if (!veiculo.chassi.isNullOrBlank()) {
-                                    Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
-                                    Text(
-                                        text = "Chassi: ${veiculo.chassi}",
-                                        style = FireTypography.LabelSmall,
-                                        color = FireColors.OnSurfaceVariant.copy(alpha = 0.8f)
-                                    )
-                                }
                             }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(FireSpacing.Small))
-            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+            item {
+                Spacer(modifier = Modifier.height(FireSpacing.Small))
+                FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+            }
         }
 
         FloatingActionButton(
@@ -1836,6 +1912,8 @@ private fun DocumentosModuleView(
     uiState: OccurrenceFormUiState,
     onNewDocClick: () -> Unit,
     onScanDocClick: () -> Unit,
+    galleryImages: List<GalleryImage>,
+    onImageClick: (GalleryImage) -> Unit,
     onBack: () -> Unit
 ) {
     Box(
@@ -1843,84 +1921,99 @@ private fun DocumentosModuleView(
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = FireSpacing.Medium),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("📄📄 ", style = FireTypography.HeadlineMedium)
-                Column {
-                    Text("Documentos", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
-                    Text("Cadastre os documentos das pessoas envolvidas.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+            contentPadding = PaddingValues(bottom = 120.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = FireSpacing.Medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("📄📄 ", style = FireTypography.HeadlineMedium)
+                    Column {
+                        Text("Documentos", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                        Text("Cadastre os documentos das pessoas envolvidas.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                    }
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = FireSpacing.Medium),
-                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-            ) {
-                FireButton(
-                    text = "Escanear Documento",
-                    onClick = onScanDocClick,
-                    containerColor = FireColors.Secondary,
-                    modifier = Modifier.weight(1f),
-                    icon = FireIcons.PhotoCamera
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = FireSpacing.Medium),
+                    horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    FireButton(
+                        text = "Escanear Documento",
+                        onClick = onScanDocClick,
+                        containerColor = FireColors.Secondary,
+                        modifier = Modifier.weight(1f),
+                        icon = FireIcons.PhotoCamera
+                    )
+                }
+            }
+
+            item {
+                FireGalleryCard(
+                    title = "Galeria de Documentos",
+                    category = "Documento",
+                    images = galleryImages,
+                    onImageClick = onImageClick
                 )
             }
 
             if (uiState.documentos.isEmpty()) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Nenhum documento registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                        Text("Nenhum documento registrado.", style = FireTypography.BodyMedium, color = Color.Gray)
+                    }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
-                    contentPadding = PaddingValues(bottom = 80.dp)
-                ) {
-                    items(
-                        items = uiState.documentos,
-                        key = { it.id ?: it.numero ?: java.util.UUID.randomUUID().toString() }
-                    ) { doc ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateItem()
-                        ) {
-                            Column(modifier = Modifier.padding(FireSpacing.Medium)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("📄 ", style = FireTypography.Title)
-                                        Text(doc.tipo, style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                                    }
+                items(
+                    items = uiState.documentos,
+                    key = { it.id ?: it.numero ?: java.util.UUID.randomUUID().toString() }
+                ) { doc ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem()
+                    ) {
+                        Column(modifier = Modifier.padding(FireSpacing.Medium)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("📄 ", style = FireTypography.Title)
+                                    Text(doc.tipo, style = FireTypography.Title, fontWeight = FontWeight.Bold)
                                 }
-
-                                Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
-
-                                Text(
-                                    text = "Número: ${doc.numero ?: "N/D"}",
-                                    style = FireTypography.BodyMedium,
-                                    color = FireColors.OnSurfaceVariant
-                                )
                             }
+
+                            Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
+
+                            Text(
+                                text = "Número: ${doc.numero ?: "N/D"}",
+                                style = FireTypography.BodyMedium,
+                                color = FireColors.OnSurfaceVariant
+                            )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(FireSpacing.Small))
-            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+            item {
+                Spacer(modifier = Modifier.height(FireSpacing.Small))
+                FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+            }
         }
 
         FloatingActionButton(
@@ -2206,6 +2299,8 @@ private fun HistoricoModuleView(
 private fun EvidenciasModuleView(
     uiState: OccurrenceFormUiState,
     onTakePhoto: () -> Unit,
+    galleryImages: List<GalleryImage>,
+    onImageClick: (GalleryImage) -> Unit,
     onBack: () -> Unit
 ) {
     Box(
@@ -2213,61 +2308,74 @@ private fun EvidenciasModuleView(
             .fillMaxSize()
             .padding(FireSpacing.Medium)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = FireSpacing.Medium),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("📎📎 ", style = FireTypography.HeadlineMedium)
-                Column {
-                    Text("Evidências", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
-                    Text("Fotografe e organize evidências físicas no local.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+            contentPadding = PaddingValues(bottom = 120.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = FireSpacing.Medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("📎📎 ", style = FireTypography.HeadlineMedium)
+                    Column {
+                        Text("Evidências", style = FireTypography.Headline, fontWeight = FontWeight.Bold)
+                        Text("Fotografe e organize evidências físicas no local.", style = FireTypography.LabelMedium, color = FireColors.OnSurfaceVariant)
+                    }
                 }
             }
 
+            item {
+                FireGalleryCard(
+                    title = "Galeria de Evidências",
+                    category = "Evidência",
+                    images = galleryImages,
+                    onImageClick = onImageClick
+                )
+            }
+
             if (uiState.evidencias.isEmpty()) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Nenhuma evidência registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                        Text("Nenhuma evidência registrada.", style = FireTypography.BodyMedium, color = Color.Gray)
+                    }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
-                    contentPadding = PaddingValues(bottom = 80.dp)
-                ) {
-                    items(
-                        items = uiState.evidencias,
-                        key = { it.id ?: (it.urlStorage.takeIf { it.isNotEmpty() } ?: it.hashSha256) }
-                    ) { ev ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                items(
+                    items = uiState.evidencias,
+                    key = { it.id ?: (it.urlStorage.takeIf { it.isNotEmpty() } ?: it.hashSha256) }
+                ) { ev ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.5f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem()
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .animateItem()
+                                .padding(FireSpacing.Medium),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(FireSpacing.Medium),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text("Evidência: ${ev.tipo}", style = FireTypography.BodyMedium, fontWeight = FontWeight.Bold)
-                                    Text("Data: ${ev.dataHora.take(16).replace("T", " ")}", style = FireTypography.Caption, color = Color.Gray)
-                                }
+                            Column {
+                                Text("Evidência: ${ev.tipo}", style = FireTypography.BodyMedium, fontWeight = FontWeight.Bold)
+                                Text("Data: ${ev.dataHora.take(16).replace("T", " ")}", style = FireTypography.Caption, color = Color.Gray)
                             }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(FireSpacing.Small))
-            FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+            item {
+                Spacer(modifier = Modifier.height(FireSpacing.Small))
+                FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
+            }
         }
 
         FloatingActionButton(
@@ -2295,6 +2403,8 @@ private fun EvidenciasModuleView(
 private fun AnexosModuleView(
     uiState: OccurrenceFormUiState,
     onAddMedia: () -> Unit,
+    galleryImages: List<GalleryImage>,
+    onImageClick: (GalleryImage) -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -2305,32 +2415,16 @@ private fun AnexosModuleView(
         FireButton(onClick = onAddMedia, text = "Carregar Foto / Arquivo", icon = FireIcons.CloudUpload, modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(FireSpacing.Medium))
 
-        if (uiState.fotos.isEmpty() && uiState.videos.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nenhuma foto ou mídia anexada.", style = FireTypography.BodyMedium, color = Color.Gray)
-            }
-        } else {
-            Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                Text("Mídias Anexadas:", style = FireTypography.LabelLarge, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(FireSpacing.Small))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-                ) {
-                    uiState.fotos.forEach { url ->
-                        Box(
-                            modifier = Modifier
-                                .size(90.dp)
-                                .border(1.dp, Color.Gray, FireShapes.Medium)
-                                .clip(FireShapes.Medium)
-                                .background(Color.LightGray)
-                        ) {
-                            Text("FOTO", style = FireTypography.Caption, modifier = Modifier.align(Alignment.Center))
-                        }
-                    }
-                }
-            }
-        }
+        FireGalleryCard(
+            title = "Galeria de Anexos",
+            category = "Anexo",
+            images = galleryImages,
+            onImageClick = onImageClick,
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(modifier = Modifier.height(FireSpacing.Small))
+        FireButton(text = "Voltar ao Dashboard", onClick = onBack, modifier = Modifier.fillMaxWidth())
     }
 }
 

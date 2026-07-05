@@ -807,20 +807,24 @@ class OccurrenceFormViewModel @Inject constructor(
     ) {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
             try {
+                android.util.Log.d("FireCamera", "Retorno Camera: URI=$imageUri")
                 // 1. Decode bitmap
                 val bitmap = context.contentResolver.openInputStream(imageUri)?.use { stream ->
                     BitmapFactory.decodeStream(stream)
                 }
                 
                 if (bitmap == null) {
+                    android.util.Log.e("FireCamera", "Erro: Falha ao decodificar imagem da câmera.")
                     _uiState.update { it.copy(isLoading = false, errorMessage = "Falha ao decodificar imagem da câmera.") }
                     return@launch
                 }
-
+                
                 // 2. Check Quality
                 val quality = imageProcessingService.checkQuality(bitmap)
                 if (!quality.isValid) {
+                    android.util.Log.w("FireCamera", "Qualidade inadequada: ${quality.reason}")
                     _uiState.update { it.copy(isLoading = false) }
                     onQualityIssue(quality.reason ?: "Baixa qualidade detectada na imagem.")
                     return@launch
@@ -830,7 +834,7 @@ class OccurrenceFormViewModel @Inject constructor(
                 val processedBitmap = imageProcessingService.processDocumentImage(bitmap)
                 
                 // 4. Save enhanced image to a temporary file
-                val processedFile = java.io.File(context.cacheDir, "camera_capture_processed_${System.currentTimeMillis()}.jpg")
+                val processedFile = java.io.File(context.cacheDir, "camera_capture_processed_${System.currentTimeMillis()}.jpg").canonicalFile
                 java.io.FileOutputStream(processedFile).use { out ->
                     processedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
                 }
@@ -840,18 +844,22 @@ class OccurrenceFormViewModel @Inject constructor(
                     "com.example.firenotes.fileprovider",
                     processedFile
                 )
+                android.util.Log.d("FireCamera", "Imagem processada salva localmente: URI=$processedUri, Path=${processedFile.absolutePath}")
 
                 // 5. Run OCR Service on the treated image in background
                 ocrService.recognizeText(processedUri)
                     .onSuccess { result ->
-                        android.util.Log.d("FireNotes", "OCR - Documento identificado: Tipo=${result.tipo}")
+                        val duration = System.currentTimeMillis() - startTime
+                        android.util.Log.d("FireCamera", "OCR sucesso: Tipo=${result.tipo}, Tempo=${duration}ms")
                         _uiState.update { it.copy(isLoading = false) }
                         onSuccess(result, processedUri)
                     }
                     .onFailure { error ->
+                        android.util.Log.e("FireCamera", "Erro OCR: ${error.message}", error)
                         _uiState.update { it.copy(isLoading = false, errorMessage = "Erro no processamento OCR: ${error.localizedMessage}") }
                     }
             } catch (e: Exception) {
+                android.util.Log.e("FireCamera", "Erro no fluxo OCR: ${e.message}", e)
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Erro no fluxo OCR: ${e.localizedMessage}") }
             }
         }
@@ -863,7 +871,9 @@ class OccurrenceFormViewModel @Inject constructor(
     ) {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
             try {
+                android.util.Log.d("FireCamera", "Retorno Camera Direto: URI=$imageUri")
                 val bitmap = context.contentResolver.openInputStream(imageUri)?.use { stream ->
                     BitmapFactory.decodeStream(stream)
                 }
@@ -873,31 +883,36 @@ class OccurrenceFormViewModel @Inject constructor(
                 } else {
                     null
                 }
-
+ 
                 val processedUri = if (processedBitmap != null) {
-                    val processedFile = java.io.File(context.cacheDir, "camera_capture_processed_${System.currentTimeMillis()}.jpg")
+                    val processedFile = java.io.File(context.cacheDir, "camera_capture_processed_${System.currentTimeMillis()}.jpg").canonicalFile
                     java.io.FileOutputStream(processedFile).use { out ->
                         processedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
                     }
-                    androidx.core.content.FileProvider.getUriForFile(
+                    val newUri = androidx.core.content.FileProvider.getUriForFile(
                         context,
                         "com.example.firenotes.fileprovider",
                         processedFile
                     )
+                    android.util.Log.d("FireCamera", "Imagem processada salva localmente direto: URI=$newUri, Path=${processedFile.absolutePath}")
+                    newUri
                 } else {
                     imageUri
                 }
-
+ 
                 ocrService.recognizeText(processedUri)
                     .onSuccess { result ->
-                        android.util.Log.d("FireNotes", "OCR - Documento identificado: Tipo=${result.tipo}")
+                        val duration = System.currentTimeMillis() - startTime
+                        android.util.Log.d("FireCamera", "OCR Direto sucesso: Tipo=${result.tipo}, Tempo=${duration}ms")
                         _uiState.update { it.copy(isLoading = false) }
                         onSuccess(result, processedUri)
                     }
                     .onFailure { error ->
+                        android.util.Log.e("FireCamera", "Erro OCR Direto: ${error.message}", error)
                         _uiState.update { it.copy(isLoading = false, errorMessage = "Erro no processamento OCR: ${error.localizedMessage}") }
                     }
             } catch (e: Exception) {
+                android.util.Log.e("FireCamera", "Erro no fluxo OCR direto: ${e.message}", e)
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Erro no fluxo OCR direto: ${e.localizedMessage}") }
             }
         }
@@ -935,6 +950,68 @@ class OccurrenceFormViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Erro ler arquivo: ${error.localizedMessage}") }
             }
         }
+    }
+
+    fun deleteDocumento(id: String) {
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            repository.deleteDocumento(id)
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            documentos = state.documentos.filter { it.id != id }
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoading = false, errorMessage = error.localizedMessage) }
+                }
+        }
+    }
+
+    fun deleteVeiculo(id: String) {
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            repository.deleteVeiculo(id)
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            veiculos = state.veiculos.filter { it.id != id }
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoading = false, errorMessage = error.localizedMessage) }
+                }
+        }
+    }
+
+    fun deleteEvidencia(id: String) {
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            repository.deleteEvidencia(id)
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            evidencias = state.evidencias.filter { it.id != id }
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoading = false, errorMessage = error.localizedMessage) }
+                }
+        }
+    }
+
+    fun removeFoto(path: String) {
+        _uiState.update { state ->
+            val updatedFotos = state.fotos.filter { it != path }
+            state.copy(fotos = updatedFotos)
+        }
+        saveOccurrenceDraft()
     }
 
     fun saveOccurrenceDraft() {

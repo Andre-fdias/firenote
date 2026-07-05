@@ -50,6 +50,9 @@ interface OcorrenciaDao {
     @Query("SELECT * FROM documentos WHERE ocorrenciaId = :ocorrenciaId")
     suspend fun getDocumentosForOcorrencia(ocorrenciaId: String): List<RoomDocumento>
 
+    @Query("DELETE FROM documentos WHERE id = :id")
+    suspend fun deleteDocumento(id: String)
+
     // --- Veiculos Master ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVeiculoMaster(veiculo: RoomVeiculoMaster)
@@ -66,6 +69,9 @@ interface OcorrenciaDao {
 
     @Query("SELECT * FROM veiculos_ocorrencia WHERE ocorrenciaId = :ocorrenciaId")
     suspend fun getVeiculosForOcorrencia(ocorrenciaId: String): List<RoomVeiculoOcorrencia>
+
+    @Query("DELETE FROM veiculos_ocorrencia WHERE id = :id")
+    suspend fun deleteVeiculoOcorrencia(id: String)
 
     // --- Viaturas Master ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)

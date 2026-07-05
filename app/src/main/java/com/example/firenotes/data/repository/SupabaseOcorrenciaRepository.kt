@@ -655,4 +655,8 @@ class SupabaseOcorrenciaRepository @Inject constructor(
             .decodeList<EvidenciaDto>()
             .map { it.toDomain() }
     }
+
+    override suspend fun deleteDocumento(id: String): Result<Unit> = Result.success(Unit)
+    override suspend fun deleteVeiculo(id: String): Result<Unit> = Result.success(Unit)
+    override suspend fun deleteEvidencia(id: String): Result<Unit> = Result.success(Unit)
 }
