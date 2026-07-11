@@ -28,6 +28,7 @@ data class SettingsUiState(
     val infoMessage: String? = null,
     val errorMessage: String? = null,
     val showRestoreDialog: Boolean = false,
+    val authRecoveryIntent: android.content.Intent? = null,
     
     // Security states
     val pinCode: String = "", // PIN code if configured
@@ -39,6 +40,7 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     private val ocorrenciaDao: OcorrenciaDao,
     val googleDriveBackupService: GoogleDriveBackupService,
+    private val settingsRepository: com.example.firenotes.domain.repository.SettingsRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -72,33 +74,37 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun loadPinSettings() {
-        val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-        _uiState.update {
-            it.copy(
-                pinEnabled = prefs.getBoolean("pin_enabled", false),
-                pinCode = prefs.getString("pin_code", "") ?: "",
-                biometricEnabled = prefs.getBoolean("biometric_enabled", false)
-            )
+        viewModelScope.launch {
+            settingsRepository.pinEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(pinEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.pinCodeFlow.collect { code ->
+                _uiState.update { it.copy(pinCode = code) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.biometricEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(biometricEnabled = enabled) }
+            }
         }
     }
 
     // --- Security Configuration ---
     fun updatePin(pin: String, enabled: Boolean) {
-        val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-        prefs.edit().apply {
-            putBoolean("pin_enabled", enabled)
-            putString("pin_code", pin)
-            apply()
+        viewModelScope.launch {
+            settingsRepository.setPinCode(pin)
+            settingsRepository.setPinEnabled(enabled)
+            _uiState.update { it.copy(infoMessage = "PIN de segurança atualizado.") }
         }
-        loadPinSettings()
-        _uiState.update { it.copy(infoMessage = "PIN de segurança atualizado.") }
     }
 
     fun updateBiometric(enabled: Boolean) {
-        val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("biometric_enabled", enabled).apply()
-        loadPinSettings()
-        _uiState.update { it.copy(infoMessage = "Configuração de biometria atualizada.") }
+        viewModelScope.launch {
+            settingsRepository.setBiometricEnabled(enabled)
+            _uiState.update { it.copy(infoMessage = "Configuração de biometria atualizada.") }
+        }
     }
 
     // --- Google Drive Actions ---
@@ -126,6 +132,10 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun clearRecoveryIntent() {
+        _uiState.update { it.copy(authRecoveryIntent = null) }
+    }
+
     fun fetchDriveBackups() {
         val account = googleDriveBackupService.getLastSignedInAccount()
         if (account == null) {
@@ -144,7 +154,9 @@ class SettingsViewModel @Inject constructor(
                     .onFailure { error ->
                         _uiState.update { it.copy(isProcessing = false, errorMessage = "Falha ao listar backups: ${error.localizedMessage}") }
                     }
-            } catch(e: Exception) {
+            } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                _uiState.update { it.copy(isProcessing = false, authRecoveryIntent = e.intent, errorMessage = "Permissão do Google Drive necessária.") }
+            } catch (e: Exception) {
                 _uiState.update { it.copy(isProcessing = false, errorMessage = "Erro de autenticação do Google: ${e.localizedMessage}") }
             }
         }
@@ -168,7 +180,9 @@ class SettingsViewModel @Inject constructor(
                     .onFailure { error ->
                         _uiState.update { it.copy(isProcessing = false, errorMessage = "Falha ao enviar backup: ${error.localizedMessage}") }
                     }
-            } catch(e: Exception) {
+            } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                _uiState.update { it.copy(isProcessing = false, authRecoveryIntent = e.intent, errorMessage = "Permissão do Google Drive necessária.") }
+            } catch (e: Exception) {
                 _uiState.update { it.copy(isProcessing = false, errorMessage = "Erro ao acessar o Drive: ${e.localizedMessage}") }
             }
         }
@@ -190,7 +204,9 @@ class SettingsViewModel @Inject constructor(
                     .onFailure { error ->
                         _uiState.update { it.copy(isProcessing = false, errorMessage = "Falha ao restaurar dados: ${error.localizedMessage}") }
                     }
-            } catch(e: Exception) {
+            } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                _uiState.update { it.copy(isProcessing = false, authRecoveryIntent = e.intent, errorMessage = "Permissão do Google Drive necessária.") }
+            } catch (e: Exception) {
                 _uiState.update { it.copy(isProcessing = false, errorMessage = "Erro de restauração: ${e.localizedMessage}") }
             }
         }
@@ -210,7 +226,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 // Close DB and delete DB files
-                AppDatabase.getDatabase(context).close()
+                AppDatabase.closeDatabase()
                 val dbFile = context.getDatabasePath("firenotes.db")
                 if (dbFile.exists()) dbFile.delete()
                 File(dbFile.path + "-shm").delete()
@@ -223,6 +239,10 @@ class SettingsViewModel @Inject constructor(
                 }
 
                 // Clear credentials settings
+                settingsRepository.setPinEnabled(false)
+                settingsRepository.setPinCode("")
+                settingsRepository.setBiometricEnabled(false)
+                settingsRepository.setTheme("Automático")
                 context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).edit().clear().apply()
             }.onSuccess {
                 _uiState.update { it.copy(isProcessing = false, infoMessage = "Todos os dados foram excluídos do aparelho.") }
@@ -239,6 +259,7 @@ class SettingsViewModel @Inject constructor(
 
     fun updateTheme(tema: String) {
         viewModelScope.launch {
+            settingsRepository.setTheme(tema)
             val newConfig = _uiState.value.config.copy(tema = tema)
             ocorrenciaDao.insertConfiguracao(newConfig)
         }
@@ -260,5 +281,9 @@ class SettingsViewModel @Inject constructor(
 
     fun clearMessages() {
         _uiState.update { it.copy(infoMessage = null, errorMessage = null) }
+    }
+
+    fun setError(message: String) {
+        _uiState.update { it.copy(errorMessage = message) }
     }
 }

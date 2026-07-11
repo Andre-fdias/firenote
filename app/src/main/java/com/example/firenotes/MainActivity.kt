@@ -2,6 +2,8 @@ package com.example.firenotes
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,8 +29,12 @@ import com.example.firenotes.ui.screens.home.HomeScreen
 import com.example.firenotes.ui.screens.home.HomeViewModel
 import com.example.firenotes.ui.screens.occurrence.OccurrenceFormScreen
 import com.example.firenotes.ui.screens.occurrence.OccurrenceFormViewModel
+import com.example.firenotes.ui.screens.occurrence.PersonIdentificationScreen
+import com.example.firenotes.ui.screens.occurrence.PersonIdentificationViewModel
 import com.example.firenotes.ui.screens.settings.SettingsScreen
 import com.example.firenotes.ui.screens.settings.SettingsViewModel
+import com.example.firenotes.ui.screens.reports.ReportsScreen
+import com.example.firenotes.ui.screens.reports.ReportsViewModel
 import com.example.firenotes.ui.designsystem.theme.FireNotesTheme
 import com.example.firenotes.ui.designsystem.components.navigation.FireBottomNavigation
 import com.example.firenotes.ui.designsystem.icons.FireIcons
@@ -36,30 +42,45 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     @Inject
     lateinit var ocorrenciaDao: OcorrenciaDao
+
+    @Inject
+    lateinit var settingsRepository: com.example.firenotes.domain.repository.SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val configState = ocorrenciaDao.getConfiguracaoFlow().collectAsState(initial = null)
-            val config = configState.value
-            val isDarkTheme = when (config?.tema) {
+            val theme by settingsRepository.themeFlow.collectAsState(initial = "Automático")
+            val isDarkTheme = when (theme) {
                 "Claro" -> false
                 "Escuro" -> true
                 else -> androidx.compose.foundation.isSystemInDarkTheme()
             }
 
             FireNotesTheme(darkTheme = isDarkTheme) {
+                val showSplash = remember { mutableStateOf(true) }
                 val isUnlocked = remember { mutableStateOf(false) }
-                val prefs = remember { getSharedPreferences("security_prefs", android.content.Context.MODE_PRIVATE) }
-                val pinEnabled = prefs.getBoolean("pin_enabled", false)
-                val correctPin = prefs.getString("pin_code", "") ?: ""
+                val pinEnabled by settingsRepository.pinEnabledFlow.collectAsState(initial = false)
+                val correctPin by settingsRepository.pinCodeFlow.collectAsState(initial = "")
+                val biometricEnabled by settingsRepository.biometricEnabledFlow.collectAsState(initial = false)
 
-                if (pinEnabled && !isUnlocked.value) {
+                LaunchedEffect(biometricEnabled, pinEnabled) {
+                    if (pinEnabled && biometricEnabled && !isUnlocked.value) {
+                        showBiometricPrompt {
+                            isUnlocked.value = true
+                        }
+                    }
+                }
+
+                if (showSplash.value) {
+                    com.example.firenotes.ui.screens.splash.FireSplashScreen(
+                        onAnimationComplete = { showSplash.value = false }
+                    )
+                } else if (pinEnabled && !isUnlocked.value) {
                     com.example.firenotes.ui.screens.security.PinLockScreen(
                         correctPin = correctPin,
                         onUnlocked = { isUnlocked.value = true }
@@ -73,7 +94,10 @@ class MainActivity : ComponentActivity() {
                         Screen.Home.route,
                         Screen.Consult.route,
                         Screen.Dashboard.route,
-                        Screen.Settings.route
+                        Screen.Settings.route,
+                        Screen.OccurrenceWizard.route,
+                        Screen.OccurrenceDetails.route,
+                        Screen.Reports.route
                     )
 
                     Scaffold(
@@ -86,8 +110,12 @@ class MainActivity : ComponentActivity() {
                                         label = { Text("Home") },
                                         selected = currentRoute == Screen.Home.route,
                                         onClick = {
+                                            android.util.Log.d("FireNavigation", "Navegando para Home a partir de: $currentRoute")
                                             navController.navigate(Screen.Home.route) {
-                                                popUpTo(Screen.Home.route) { saveState = true }
+                                                popUpTo(navController.graph.startDestinationId) {
+                                                    inclusive = false
+                                                    saveState = true
+                                                }
                                                 launchSingleTop = true
                                                 restoreState = true
                                             }
@@ -158,21 +186,15 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             }
-                            composable(Screen.OccurrenceForm.route) {
-                                val formViewModel: OccurrenceFormViewModel = hiltViewModel()
-                                OccurrenceFormScreen(
-                                    viewModel = formViewModel,
-                                    onNavigateBack = {
-                                        navController.popBackStack()
-                                    }
-                                )
-                            }
                             composable(Screen.OccurrenceWizard.route) {
                                 val formViewModel: OccurrenceFormViewModel = hiltViewModel()
                                 OccurrenceFormScreen(
                                     viewModel = formViewModel,
                                     onNavigateBack = {
                                         navController.popBackStack()
+                                    },
+                                    onNavigateToDocumentScanner = { occurrenceId ->
+                                        navController.navigate(Screen.DocumentScanner.createRoute(occurrenceId))
                                     }
                                 )
                             }
@@ -191,7 +213,22 @@ class MainActivity : ComponentActivity() {
                                     viewModel = formViewModel,
                                     onNavigateBack = {
                                         navController.popBackStack()
+                                    },
+                                    onNavigateToDocumentScanner = { occurrenceId ->
+                                        navController.navigate(Screen.DocumentScanner.createRoute(occurrenceId))
                                     }
+                                )
+                            }
+                            composable(
+                                route = Screen.DocumentScanner.route,
+                                arguments = listOf(androidx.navigation.navArgument("occurrenceId") { type = androidx.navigation.NavType.StringType })
+                            ) { backStackEntry ->
+                                val id = backStackEntry.arguments?.getString("occurrenceId").orEmpty()
+                                val docViewModel: PersonIdentificationViewModel = hiltViewModel()
+                                PersonIdentificationScreen(
+                                    occurrenceId = id,
+                                    viewModel = docViewModel,
+                                    onNavigateBack = { navController.popBackStack() }
                                 )
                             }
                             composable(Screen.Consult.route) {
@@ -199,8 +236,8 @@ class MainActivity : ComponentActivity() {
                                 com.example.firenotes.ui.screens.consult.ConsultScreen(
                                     viewModel = consultViewModel,
                                     onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToDuplicate = { _ ->
-                                        navController.navigate(Screen.OccurrenceWizard.route)
+                                    onNavigateToEdit = { id ->
+                                        navController.navigate(Screen.OccurrenceDetails.createRoute(id))
                                     }
                                 )
                             }
@@ -208,7 +245,12 @@ class MainActivity : ComponentActivity() {
                                 val dashboardViewModel: com.example.firenotes.ui.screens.dashboard.DashboardViewModel = hiltViewModel()
                                 com.example.firenotes.ui.screens.dashboard.DashboardScreen(
                                     viewModel = dashboardViewModel,
-                                    onNavigateBack = { navController.popBackStack() }
+                                    onNavigateBack = { navController.popBackStack() },
+                                    onNavigateToReports = {
+                                        navController.navigate(Screen.Reports.route) {
+                                            launchSingleTop = true
+                                        }
+                                    }
                                 )
                             }
                             composable(Screen.Settings.route) {
@@ -217,10 +259,44 @@ class MainActivity : ComponentActivity() {
                                     viewModel = settingsViewModel
                                 )
                             }
+                            composable(Screen.Reports.route) {
+                                val reportsViewModel: ReportsViewModel = hiltViewModel()
+                                ReportsScreen(
+                                    viewModel = reportsViewModel,
+                                    onNavigateBack = { navController.popBackStack() }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    private fun showBiometricPrompt(onSuccess: () -> Unit) {
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                }
+
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onSuccess()
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                }
+            })
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Autenticação Biométrica")
+            .setSubtitle("Acesse o Fire Notes com sua digital")
+            .setNegativeButtonText("Usar PIN")
+            .build()
+
+        biometricPrompt.authenticate(promptInfo)
     }
 }

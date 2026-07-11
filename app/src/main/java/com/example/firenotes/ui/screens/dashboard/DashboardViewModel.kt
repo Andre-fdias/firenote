@@ -54,10 +54,8 @@ class DashboardViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false, errorMessage = e.localizedMessage) }
                 }
                 .collect { list ->
-                    // Fetch full occurrences details to do real calculations
-                    val fullList = list.map { o ->
-                        repository.getOcorrenciaById(o.id ?: "").getOrDefault(o)
-                    }
+                    // Use pre-fetched list directly to avoid redundant N+1 queries
+                    val fullList = list
 
                     // 1. Calculate time periods
                     val today = LocalDate.now()

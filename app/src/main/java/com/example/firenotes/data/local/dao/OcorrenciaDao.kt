@@ -97,6 +97,45 @@ interface OcorrenciaDao {
     @Query("DELETE FROM viaturas_ocorrencia WHERE id = :viaturaId")
     suspend fun deleteViaturaOcorrencia(viaturaId: String)
 
+    @Query("SELECT * FROM viaturas_ocorrencia WHERE id = :viaturaId")
+    suspend fun getViaturaById(viaturaId: String): RoomViaturaOcorrencia?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM viaturas_ocorrencia WHERE id = :viaturaId)")
+    suspend fun viaturaExists(viaturaId: String): Boolean
+
+    @Query("SELECT * FROM militares_viatura WHERE id = :militarId")
+    suspend fun getMilitarById(militarId: String): RoomMilitarViatura?
+
+    @Transaction
+    suspend fun salvarViaturaComMilitares(viatura: RoomViaturaOcorrencia, militares: List<RoomMilitarViatura>) {
+        insertViaturaOcorrencia(viatura)
+        militares.forEach { insertMilitarViatura(it) }
+    }
+
+    @Transaction
+    suspend fun salvarPessoaEDocumentoComCpf(pessoa: RoomPessoa, documento: RoomDocumento): String {
+        val existingPessoa = if (!pessoa.cpf.isNullOrBlank()) getPessoaByCpf(pessoa.cpf) else null
+        val finalPessoaId = existingPessoa?.id ?: pessoa.id
+        val finalPessoa = if (existingPessoa != null) {
+            pessoa.copy(
+                id = finalPessoaId,
+                telefone = if (pessoa.telefone.isNullOrBlank()) existingPessoa.telefone else pessoa.telefone,
+                email = if (pessoa.email.isNullOrBlank()) existingPessoa.email else pessoa.email,
+                logradouro = if (pessoa.logradouro.isNullOrBlank()) existingPessoa.logradouro else pessoa.logradouro,
+                numero = if (pessoa.numero.isNullOrBlank()) existingPessoa.numero else pessoa.numero,
+                bairro = if (pessoa.bairro.isNullOrBlank()) existingPessoa.bairro else pessoa.bairro,
+                cidade = if (pessoa.cidade.isNullOrBlank()) existingPessoa.cidade else pessoa.cidade,
+                uf = if (pessoa.uf.isNullOrBlank()) existingPessoa.uf else pessoa.uf,
+                cep = if (pessoa.cep.isNullOrBlank()) existingPessoa.cep else pessoa.cep
+            )
+        } else {
+            pessoa
+        }
+        insertPessoa(finalPessoa)
+        insertDocumento(documento.copy(pessoaId = finalPessoaId))
+        return finalPessoaId
+    }
+
     // --- Militares Viatura ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMilitarViatura(militar: RoomMilitarViatura)

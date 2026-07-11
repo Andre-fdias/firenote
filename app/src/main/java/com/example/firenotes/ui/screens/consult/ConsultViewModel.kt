@@ -68,13 +68,10 @@ class ConsultViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false, errorMessage = e.localizedMessage) }
                 }
                 .collect { list ->
-                    // For each occurrence, fetch full details to have access to viaturas, vitimas, etc.
-                    val fullList = list.map { occurrence ->
-                        repository.getOcorrenciaById(occurrence.id ?: "").getOrDefault(occurrence)
-                    }
+                    // Use pre-fetched list directly to avoid redundant N+1 queries
                     _uiState.update { state ->
                         state.copy(
-                            occurrences = fullList,
+                            occurrences = list,
                             isLoading = false
                         )
                     }
@@ -116,21 +113,63 @@ class ConsultViewModel @Inject constructor(
         _uiState.update { it.copy(showDetailsDialog = false, selectedOccurrence = null) }
     }
 
+    fun deleteOccurrence(id: String) {
+        _uiState.update { it.copy(isLoading = true) }
+        viewModelScope.launch {
+            repository.deleteOcorrencia(id).fold(
+                onSuccess = {
+                    _uiState.update { it.copy(isLoading = false, showDetailsDialog = false, selectedOccurrence = null) }
+                },
+                onFailure = { e ->
+                    _uiState.update { it.copy(isLoading = false, errorMessage = "Falha ao deletar ocorrência: ${e.localizedMessage}") }
+                }
+            )
+        }
+    }
+
     fun duplicateOccurrence(occurrence: Ocorrencia, onDuplicated: (Ocorrencia) -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             repository.getOcorrenciaById(occurrence.id ?: "").onSuccess { full ->
                 // Create a duplicate draft without talão (protocolo), data, hora
                 val clone = full.copy(
-                    id = null,
+                    id = java.util.UUID.randomUUID().toString(),
                     protocolo = "", // Clear talão
                     dataHora = java.time.Instant.now(),
-                    viaturas = full.viaturas.map { v -> v.copy(id = null, ocorrenciaId = "TEMP") },
-                    vitimas = full.vitimas.map { vt -> vt.copy(id = null, ocorrenciaId = "TEMP") },
-                    veiculos = full.veiculos.map { vc -> vc.copy(id = null, ocorrenciaId = "TEMP") }
+                    viaturas = emptyList(),
+                    vitimas = emptyList(),
+                    veiculos = emptyList()
                 )
-                _uiState.update { it.copy(isLoading = false) }
-                onDuplicated(clone)
+                repository.createOcorrencia(clone).onSuccess { saved ->
+                    val newOcorrenciaId = saved.id!!
+                    
+                    // Duplicate all related items
+                    full.viaturas.forEach { v ->
+                        repository.addViatura(v.copy(id = java.util.UUID.randomUUID().toString(), ocorrenciaId = newOcorrenciaId)).onSuccess { savedViatura ->
+                            val newViaturaId = savedViatura.id!!
+                            v.equipe.forEach { m ->
+                                repository.addMilitar(m.copy(id = java.util.UUID.randomUUID().toString(), viaturaId = newViaturaId))
+                            }
+                        }
+                    }
+
+                    full.veiculos.forEach { vc ->
+                        repository.addVeiculoEnvolvido(vc.copy(id = java.util.UUID.randomUUID().toString(), ocorrenciaId = newOcorrenciaId))
+                    }
+
+                    full.vitimas.forEach { vt ->
+                        repository.addVitima(vt.copy(id = java.util.UUID.randomUUID().toString(), ocorrenciaId = newOcorrenciaId))
+                    }
+
+                    repository.getOcorrenciaById(newOcorrenciaId).onSuccess { fullySaved ->
+                        _uiState.update { it.copy(isLoading = false) }
+                        onDuplicated(fullySaved)
+                    }.onFailure {
+                        _uiState.update { it.copy(isLoading = false, errorMessage = "Erro ao carregar cópia da ocorrência.") }
+                    }
+                }.onFailure { e ->
+                    _uiState.update { it.copy(isLoading = false, errorMessage = "Falha ao salvar cópia: ${e.localizedMessage}") }
+                }
             }.onFailure {
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Falha ao recuperar dados da ocorrência para duplicar.") }
             }

@@ -16,3 +16,7 @@ local.properties
 /firenote/
 *.log
 .kotlin/
+
+# SSH keys
+davi2807
+davi2807.pub

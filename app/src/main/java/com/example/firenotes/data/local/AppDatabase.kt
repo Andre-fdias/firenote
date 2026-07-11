@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.*
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.firenotes.data.local.dao.OcorrenciaDao
+import com.example.firenotes.data.local.dao.HomeOperationalDao
 import com.example.firenotes.data.local.entities.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,18 +29,58 @@ import java.util.UUID
         RoomEvidencia::class,
         RoomTimelineEvento::class,
         RoomConfiguracao::class,
-        RoomBackupLog::class
+        RoomBackupLog::class,
+        RoomTarefa::class,
+        RoomEventoAgenda::class,
+        RoomProntidaoDia::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun ocorrenciaDao(): OcorrenciaDao
+    abstract fun homeOperationalDao(): HomeOperationalDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        @Volatile
+        private var isCreatedJustNow = false
+
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `tarefas` (
+                        `id` TEXT NOT NULL, 
+                        `titulo` TEXT NOT NULL, 
+                        `concluida` INTEGER NOT NULL, 
+                        `data` TEXT NOT NULL, 
+                        `categoria` TEXT NOT NULL, 
+                        PRIMARY KEY(`id`)
+                    )
+                """)
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `eventos_agenda` (
+                        `id` TEXT NOT NULL, 
+                        `titulo` TEXT NOT NULL, 
+                        `descricao` TEXT, 
+                        `data` TEXT NOT NULL, 
+                        `horaInicio` TEXT, 
+                        `horaFim` TEXT, 
+                        PRIMARY KEY(`id`)
+                    )
+                """)
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `prontidao_dias` (
+                        `data` TEXT NOT NULL, 
+                        `escala` TEXT NOT NULL, 
+                        PRIMARY KEY(`data`)
+                    )
+                """)
+            }
+        }
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -51,18 +92,35 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
-                        // Seed master catalogs
-                        INSTANCE?.let { database ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                seedCatalogs(database.ocorrenciaDao())
-                            }
-                        }
+                        isCreatedJustNow = true
                     }
                 })
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_1_2)
                 .build()
+                
                 INSTANCE = instance
+
+                if (isCreatedJustNow) {
+                    isCreatedJustNow = false
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            android.util.Log.d("FireDatabase", "🌱 Semeando catálogos do banco de dados pela primeira vez...")
+                            seedCatalogs(instance.ocorrenciaDao())
+                            android.util.Log.d("FireDatabase", "✅ Catálogos semeados com sucesso!")
+                        } catch (e: Exception) {
+                            android.util.Log.e("FireDatabase", "❌ Erro ao semear catálogos: ${e.message}", e)
+                        }
+                    }
+                }
+                
                 instance
+            }
+        }
+
+        fun closeDatabase() {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
             }
         }
 

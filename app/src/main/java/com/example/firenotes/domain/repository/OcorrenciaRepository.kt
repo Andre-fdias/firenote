@@ -17,18 +17,10 @@ interface OcorrenciaRepository {
     suspend fun vincularOrgaoApoio(ocorrenciaId: String, orgaoId: String): Result<Unit>
     suspend fun desvincularOrgaoApoio(ocorrenciaId: String, orgaoId: String): Result<Unit>
 
-    // New DTO-based operations for Supabase
-    suspend fun fetchOcorrencias(): Result<List<com.example.firenotes.data.model.OcorrenciaDto>>
-    suspend fun insertOcorrenciaCompleta(
-        ocorrencia: com.example.firenotes.data.model.OcorrenciaDto,
-        veiculos: List<com.example.firenotes.data.model.VeiculoDto>,
-        vitimas: List<com.example.firenotes.data.model.VitimaDto>,
-        orgaosApoioIds: List<String>
-    ): Result<Unit>
-
     // V2 Enhanced Operations
     suspend fun upsertPessoa(pessoa: Pessoa): Result<Pessoa>
     suspend fun addDocumento(documento: Documento): Result<Documento>
+    suspend fun salvarPessoaEDocumento(pessoa: Pessoa, documento: Documento): Result<String>
     suspend fun getPessoasDaOcorrencia(ocorrenciaId: String): Result<List<Pessoa>>
     suspend fun getDocumentosDaOcorrencia(ocorrenciaId: String): Result<List<Documento>>
     suspend fun uploadFile(bucket: String, path: String, bytes: ByteArray): Result<String>
@@ -36,6 +28,7 @@ interface OcorrenciaRepository {
 
     // V3 Viaturas & Militares Operations
     suspend fun addViatura(viatura: Viatura): Result<Viatura>
+    suspend fun salvarViaturaComMilitares(viatura: Viatura, militares: List<Militar>): Result<Viatura>
     suspend fun deleteViatura(viaturaId: String): Result<Unit>
     suspend fun addMilitar(militar: Militar): Result<Militar>
     suspend fun deleteMilitar(militarId: String): Result<Unit>
@@ -59,4 +52,5 @@ interface OcorrenciaRepository {
     suspend fun deleteDocumento(id: String): Result<Unit>
     suspend fun deleteVeiculo(id: String): Result<Unit>
     suspend fun deleteEvidencia(id: String): Result<Unit>
+    suspend fun deleteOcorrencia(id: String): Result<Unit>
 }

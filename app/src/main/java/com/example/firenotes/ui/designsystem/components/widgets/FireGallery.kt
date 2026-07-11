@@ -73,7 +73,28 @@ fun LocalImage(
     LaunchedEffect(filePath) {
         withContext(Dispatchers.IO) {
             try {
-                val resolvedBitmap = if (filePath.startsWith("content://") || filePath.startsWith("file://")) {
+                val resolvedBitmap = if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+                    try {
+                        val connection = java.net.URL(filePath).openConnection() as java.net.HttpURLConnection
+                        connection.connectTimeout = 5000
+                        connection.readTimeout = 5000
+                        connection.inputStream.use { stream ->
+                            if (isThumbnail) {
+                                val bytes = stream.readBytes()
+                                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                                options.inSampleSize = calculateInSampleSize(options, 200, 200)
+                                options.inJustDecodeBounds = false
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                            } else {
+                                BitmapFactory.decodeStream(stream)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        null
+                    }
+                } else if (filePath.startsWith("content://") || filePath.startsWith("file://")) {
                     val uri = Uri.parse(filePath)
                     context.contentResolver.openInputStream(uri)?.use { stream ->
                         if (isThumbnail) {

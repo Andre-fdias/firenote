@@ -48,4 +48,12 @@ object FireIcons {
     val FileOpen: ImageVector = Icons.Rounded.FileOpen
     val FileDownload: ImageVector = Icons.Rounded.FileDownload
     val PhotoCamera: ImageVector = Icons.Rounded.PhotoCamera
+    val PictureAsPdf: ImageVector = Icons.Rounded.PictureAsPdf
+    val FilterList: ImageVector = Icons.Rounded.FilterList
+    val Refresh: ImageVector = Icons.Rounded.Refresh
+    val Numbers: ImageVector = Icons.Rounded.Numbers
+    val Schedule: ImageVector = Icons.Rounded.Schedule
+    val ContentCopy: ImageVector = Icons.Rounded.ContentCopy
+    val Palette: ImageVector = Icons.Rounded.Palette
+    val Cloud: ImageVector = Icons.Rounded.Cloud
 }

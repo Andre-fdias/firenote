@@ -429,3 +429,28 @@ data class RoomBackupLog(
     val tamanho: Long,
     val mensagem: String?
 )
+
+@Entity(tableName = "tarefas")
+data class RoomTarefa(
+    @PrimaryKey val id: String,
+    val titulo: String,
+    val concluida: Boolean,
+    val data: String, // Formato YYYY-MM-DD
+    val categoria: String
+)
+
+@Entity(tableName = "eventos_agenda")
+data class RoomEventoAgenda(
+    @PrimaryKey val id: String,
+    val titulo: String,
+    val descricao: String?,
+    val data: String, // Formato YYYY-MM-DD
+    val horaInicio: String?, // Formato HH:MM
+    val horaFim: String?
+)
+
+@Entity(tableName = "prontidao_dias")
+data class RoomProntidaoDia(
+    @PrimaryKey val data: String, // Formato YYYY-MM-DD
+    val escala: String
+)

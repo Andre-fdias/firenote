@@ -351,22 +351,42 @@ class RoomOcorrenciaRepository @Inject constructor(
     override suspend fun desvincularOrgaoApoio(ocorrenciaId: String, orgaoId: String): Result<Unit> = runCatching {
         ocorrenciaDao.deleteApoioOcorrencia(ocorrenciaId, orgaoId)
     }
-
     override suspend fun upsertPessoa(pessoa: Pessoa): Result<Pessoa> = runCatching {
         val id = pessoa.id ?: UUID.randomUUID().toString()
+        val cleanCpf = pessoa.cpf?.trim()?.takeIf { it.isNotBlank() }
+        val cleanRg = pessoa.rg?.trim()?.takeIf { it.isNotBlank() }
+        val cleanNomeSocial = pessoa.nomeSocial?.trim()?.takeIf { it.isNotBlank() }
+
+        android.util.Log.d("FireRoom", "Inserindo/Atualizando Pessoa no Room: Nome=${pessoa.nome}, CPF=$cleanCpf, RG=$cleanRg")
         val roomPessoa = RoomPessoa(
-            id = id, nome = pessoa.nome, nomeSocial = pessoa.nomeSocial, cpf = pessoa.cpf, rg = pessoa.rg,
-            rgOrgaoEmissor = pessoa.rgOrgaoEmissor, rgUf = pessoa.rgUf, nascimento = pessoa.nascimento,
-            naturalidade = pessoa.naturalidade, nacionalidade = pessoa.nacionalidade, filiacao = pessoa.filiacao,
-            sexo = pessoa.sexo, telefone = pessoa.telefone, email = pessoa.email, logradouro = pessoa.logradouro,
-            numero = pessoa.numero, bairro = pessoa.bairro, cidade = pessoa.cidade, uf = pessoa.uf, cep = pessoa.cep
+            id = id,
+            nome = pessoa.nome,
+            nomeSocial = cleanNomeSocial,
+            cpf = cleanCpf,
+            rg = cleanRg,
+            rgOrgaoEmissor = pessoa.rgOrgaoEmissor,
+            rgUf = pessoa.rgUf,
+            nascimento = pessoa.nascimento,
+            naturalidade = pessoa.naturalidade,
+            nacionalidade = pessoa.nacionalidade,
+            filiacao = pessoa.filiacao,
+            sexo = pessoa.sexo,
+            telefone = pessoa.telefone,
+            email = pessoa.email,
+            logradouro = pessoa.logradouro,
+            numero = pessoa.numero,
+            bairro = pessoa.bairro,
+            cidade = pessoa.cidade,
+            uf = pessoa.uf,
+            cep = pessoa.cep
         )
         ocorrenciaDao.insertPessoa(roomPessoa)
-        pessoa.copy(id = id)
+        pessoa.copy(id = id, cpf = cleanCpf, rg = cleanRg, nomeSocial = cleanNomeSocial)
     }
 
     override suspend fun addDocumento(documento: Documento): Result<Documento> = runCatching {
         val id = documento.id ?: UUID.randomUUID().toString()
+        android.util.Log.d("FireRoom", "Inserindo/Atualizando Documento no Room: Tipo=${documento.tipo}, Numero=${documento.numero}")
         val structStr = json.encodeToString(documento.dadosEstruturados)
         val roomDoc = RoomDocumento(
             id = id, ocorrenciaId = documento.ocorrenciaId, pessoaId = documento.pessoaId, tipo = documento.tipo,
@@ -378,12 +398,85 @@ class RoomOcorrenciaRepository @Inject constructor(
         documento.copy(id = id)
     }
 
+    override suspend fun salvarPessoaEDocumento(pessoa: Pessoa, documento: Documento): Result<String> = runCatching {
+        val finalPessoaId = pessoa.id ?: UUID.randomUUID().toString()
+        val cleanCpf = if (pessoa.cpf.isNullOrBlank()) null else pessoa.cpf.replace(Regex("[.-]"), "")
+        val cleanRg = if (pessoa.rg.isNullOrBlank()) null else pessoa.rg.replace(Regex("[.-]"), "")
+        val cleanNomeSocial = if (pessoa.nomeSocial.isNullOrBlank()) null else pessoa.nomeSocial
+
+        val roomPessoa = RoomPessoa(
+            id = finalPessoaId,
+            nome = pessoa.nome,
+            nomeSocial = cleanNomeSocial,
+            cpf = cleanCpf,
+            rg = cleanRg,
+            rgOrgaoEmissor = pessoa.rgOrgaoEmissor,
+            rgUf = pessoa.rgUf,
+            nascimento = pessoa.nascimento,
+            naturalidade = pessoa.naturalidade,
+            nacionalidade = pessoa.nacionalidade,
+            filiacao = pessoa.filiacao,
+            sexo = pessoa.sexo,
+            telefone = pessoa.telefone,
+            email = java.lang.String.valueOf(pessoa.email ?: ""), // Safe cast or keep null
+            logradouro = pessoa.logradouro,
+            numero = pessoa.numero,
+            bairro = pessoa.bairro,
+            cidade = pessoa.cidade,
+            uf = pessoa.uf,
+            cep = pessoa.cep
+        )
+
+        val docId = documento.id ?: UUID.randomUUID().toString()
+        val structStr = json.encodeToString(documento.dadosEstruturados)
+        val roomDoc = RoomDocumento(
+            id = docId,
+            ocorrenciaId = documento.ocorrenciaId,
+            pessoaId = finalPessoaId,
+            tipo = documento.tipo,
+            numero = documento.numero,
+            urlImagem = documento.urlImagem,
+            textoOcr = documento.textoOcr,
+            dadosEstruturados = structStr,
+            hashArquivo = documento.hashArquivo,
+            dataUpload = documento.dataUpload,
+            usuario = documento.usuario
+        )
+
+        ocorrenciaDao.salvarPessoaEDocumentoComCpf(roomPessoa, roomDoc)
+    }
+
     override suspend fun getPessoasDaOcorrencia(ocorrenciaId: String): Result<List<Pessoa>> = runCatching {
-        // Room implementation: Pessoas can be queried through association maps or simple list
-        emptyList()
+        android.util.Log.d("FireRoom", "Carregando pessoas vinculadas à ocorrência: $ocorrenciaId")
+        val personIds = mutableSetOf<String>()
+
+        ocorrenciaDao.getDocumentosForOcorrencia(ocorrenciaId).forEach { doc ->
+            doc.pessoaId?.let { personIds.add(it) }
+        }
+
+        ocorrenciaDao.getVeiculosForOcorrencia(ocorrenciaId).forEach { vec ->
+            vec.condutorId?.let { personIds.add(it) }
+        }
+
+        ocorrenciaDao.getVitimasForOcorrencia(ocorrenciaId).forEach { vit ->
+            vit.pessoaId?.let { personIds.add(it) }
+        }
+
+        personIds.mapNotNull { id ->
+            ocorrenciaDao.getPessoaById(id)?.let { rp ->
+                Pessoa(
+                    id = rp.id, nome = rp.nome, nomeSocial = rp.nomeSocial, cpf = rp.cpf, rg = rp.rg,
+                    rgOrgaoEmissor = rp.rgOrgaoEmissor, rgUf = rp.rgUf, nascimento = rp.nascimento,
+                    naturalidade = rp.naturalidade, nacionalidade = rp.nacionalidade, filiacao = rp.filiacao,
+                    sexo = rp.sexo, telefone = rp.telefone, email = rp.email, logradouro = rp.logradouro,
+                    numero = rp.numero, bairro = rp.bairro, cidade = rp.cidade, uf = rp.uf, cep = rp.cep
+                )
+            }
+        }
     }
 
     override suspend fun getDocumentosDaOcorrencia(ocorrenciaId: String): Result<List<Documento>> = runCatching {
+        android.util.Log.d("FireRoom", "Carregando documentos vinculados à ocorrência: $ocorrenciaId")
         ocorrenciaDao.getDocumentosForOcorrencia(ocorrenciaId).map { rd ->
             val structMap = try { json.decodeFromString<Map<String, String>>(rd.dadosEstruturados) } catch(e: Exception) { emptyMap() }
             Documento(rd.id, rd.ocorrenciaId, rd.pessoaId, rd.tipo, rd.numero, rd.urlImagem, rd.textoOcr, structMap, rd.hashArquivo, rd.dataUpload, rd.usuario)
@@ -401,20 +494,92 @@ class RoomOcorrenciaRepository @Inject constructor(
     }
 
     // --- V3 Viaturas & Militares ---
-    override suspend fun addViatura(viatura: Viatura): Result<Viatura> = runCatching {
-        val id = viatura.id ?: UUID.randomUUID().toString()
-        val roomViatura = RoomViaturaOcorrencia(
-            id = id, ocorrenciaId = viatura.ocorrenciaId, viaturaMasterId = viatura.viaturaMasterId,
-            prefixo = viatura.prefixo, tipo = viatura.tipo, unidade = viatura.unidade,
-            kmSaida = viatura.kmSaida, kmLocal = viatura.kmLocal, kmRetorno = viatura.kmRetorno,
-            horaDespacho = viatura.horaDespacho, horaSaida = viatura.horaSaida,
-            horaChegada = viatura.horaChegada, horaRetorno = viatura.horaRetorno, observacoes = viatura.observacoes
-        )
-        ocorrenciaDao.insertViaturaOcorrencia(roomViatura)
-        viatura.copy(id = id)
+    override suspend fun addViatura(viatura: Viatura): Result<Viatura> {
+        return try {
+            val viaturaId = if (viatura.id.isNullOrBlank()) UUID.randomUUID().toString() else viatura.id
+            if (viatura.ocorrenciaId.isBlank() || viatura.ocorrenciaId == "TEMP") {
+                return Result.failure(
+                    Exception("Ocorrência ID inválido: ${viatura.ocorrenciaId}")
+                )
+            }
+            
+            android.util.Log.d("FireRoom", "📦 Salvando viatura: ID=$viaturaId, Ocorrência=${viatura.ocorrenciaId}")
+            
+            val roomViatura = RoomViaturaOcorrencia(
+                id = viaturaId, ocorrenciaId = viatura.ocorrenciaId, viaturaMasterId = viatura.viaturaMasterId,
+                prefixo = viatura.prefixo, tipo = viatura.tipo, unidade = viatura.unidade,
+                kmSaida = viatura.kmSaida, kmLocal = viatura.kmLocal, kmRetorno = viatura.kmRetorno,
+                horaDespacho = viatura.horaDespacho, horaSaida = viatura.horaSaida,
+                horaChegada = viatura.horaChegada, horaRetorno = viatura.horaRetorno, observacoes = viatura.observacoes
+            )
+            ocorrenciaDao.insertViaturaOcorrencia(roomViatura)
+            
+            val saved = ocorrenciaDao.getViaturaById(viaturaId)
+            if (saved == null) {
+                return Result.failure(Exception("Falha ao salvar viatura no banco de dados"))
+            }
+            
+            Result.success(viatura.copy(id = viaturaId))
+        } catch (e: Exception) {
+            android.util.Log.e("FireRoom", "❌ Erro ao salvar viatura: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun salvarViaturaComMilitares(
+        viatura: Viatura,
+        militares: List<Militar>
+    ): Result<Viatura> {
+        return try {
+            val viaturaId = if (viatura.id.isNullOrBlank()) UUID.randomUUID().toString() else viatura.id
+            if (viatura.ocorrenciaId.isBlank() || viatura.ocorrenciaId == "TEMP") {
+                return Result.failure(
+                    Exception("Ocorrência ID inválido: ${viatura.ocorrenciaId}")
+                )
+            }
+            
+            android.util.Log.d("FireRoom", "📦 Salvando viatura com militares: ID=$viaturaId, Ocorrência=${viatura.ocorrenciaId}, Militares=${militares.size}")
+            
+            val roomViatura = RoomViaturaOcorrencia(
+                id = viaturaId, ocorrenciaId = viatura.ocorrenciaId, viaturaMasterId = viatura.viaturaMasterId,
+                prefixo = viatura.prefixo, tipo = viatura.tipo, unidade = viatura.unidade,
+                kmSaida = viatura.kmSaida, kmLocal = viatura.kmLocal, kmRetorno = viatura.kmRetorno,
+                horaDespacho = viatura.horaDespacho, horaSaida = viatura.horaSaida,
+                horaChegada = viatura.horaChegada, horaRetorno = viatura.horaRetorno, observacoes = viatura.observacoes
+            )
+            
+            val roomMilitares = militares.map { militar ->
+                val militarId = if (militar.id.isNullOrBlank()) UUID.randomUUID().toString() else militar.id
+                RoomMilitarViatura(
+                    id = militarId, viaturaId = viaturaId, militarMasterId = militar.militarMasterId,
+                    re = militar.re, nomeGuerra = militar.nomeGuerra, graduacao = militar.graduacao.descricao,
+                    funcao = militar.funcao
+                )
+            }
+            
+            ocorrenciaDao.salvarViaturaComMilitares(roomViatura, roomMilitares)
+            
+            val updatedEquipe = roomMilitares.map { rm ->
+                Militar(
+                    id = rm.id,
+                    viaturaId = viaturaId,
+                    militarMasterId = rm.militarMasterId,
+                    re = rm.re,
+                    nomeGuerra = rm.nomeGuerra,
+                    graduacao = GraduacaoMilitar.fromDescricao(rm.graduacao),
+                    funcao = rm.funcao
+                )
+            }
+            
+            Result.success(viatura.copy(id = viaturaId, equipe = updatedEquipe))
+        } catch (e: Exception) {
+            android.util.Log.e("FireRoom", "❌ Erro ao salvar viatura com militares: ${e.message}", e)
+            Result.failure(e)
+        }
     }
 
     override suspend fun deleteViatura(viaturaId: String): Result<Unit> = runCatching {
+        android.util.Log.d("FireRoom", "Deletando Viatura do Room: ID=$viaturaId")
         val victims = ocorrenciaDao.getVitimasForViatura(viaturaId)
         if (victims.isNotEmpty()) {
             throw IllegalStateException("Não é possível excluir a viatura porque há vítimas vinculadas ao socorro dela.")
@@ -422,15 +587,40 @@ class RoomOcorrenciaRepository @Inject constructor(
         ocorrenciaDao.deleteViaturaOcorrencia(viaturaId)
     }
 
-    override suspend fun addMilitar(militar: Militar): Result<Militar> = runCatching {
-        val id = militar.id ?: UUID.randomUUID().toString()
-        val roomMilitar = RoomMilitarViatura(
-            id = id, viaturaId = militar.viaturaId, militarMasterId = militar.militarMasterId,
-            re = militar.re, nomeGuerra = militar.nomeGuerra, graduacao = militar.graduacao.descricao,
-            funcao = militar.funcao
-        )
-        ocorrenciaDao.insertMilitarViatura(roomMilitar)
-        militar.copy(id = id)
+    override suspend fun addMilitar(militar: Militar): Result<Militar> {
+        return try {
+            val viatura = ocorrenciaDao.getViaturaById(militar.viaturaId)
+            if (viatura == null) {
+                return Result.failure(
+                    Exception("Viatura com ID ${militar.viaturaId} não encontrada")
+                )
+            }
+            if (viatura.ocorrenciaId.isBlank() || viatura.ocorrenciaId == "TEMP") {
+                return Result.failure(
+                    Exception("Viatura com ocorrenciaId inválido: ${viatura.ocorrenciaId}")
+                )
+            }
+            
+            val militarId = if (militar.id.isNullOrBlank()) UUID.randomUUID().toString() else militar.id
+            android.util.Log.d("FireRoom", "📦 Salvando militar: ID=$militarId, Viatura=${militar.viaturaId}")
+            
+            val roomMilitar = RoomMilitarViatura(
+                id = militarId, viaturaId = militar.viaturaId, militarMasterId = militar.militarMasterId,
+                re = militar.re, nomeGuerra = militar.nomeGuerra, graduacao = militar.graduacao.descricao,
+                funcao = militar.funcao
+            )
+            ocorrenciaDao.insertMilitarViatura(roomMilitar)
+            
+            val saved = ocorrenciaDao.getMilitarById(militarId)
+            if (saved == null) {
+                return Result.failure(Exception("Falha ao salvar militar no banco de dados"))
+            }
+            
+            Result.success(militar.copy(id = militarId))
+        } catch (e: Exception) {
+            android.util.Log.e("FireRoom", "❌ Erro ao salvar militar: ${e.message}", e)
+            Result.failure(e)
+        }
     }
 
     override suspend fun deleteMilitar(militarId: String): Result<Unit> = runCatching {
@@ -550,25 +740,6 @@ class RoomOcorrenciaRepository @Inject constructor(
         }
     }
 
-    // --- Compatible stubs for Supabase integration ---
-    override suspend fun fetchOcorrencias(): Result<List<com.example.firenotes.data.model.OcorrenciaDto>> = runCatching {
-        ocorrenciaDao.getOcorrenciasList().map { com.example.firenotes.data.model.OcorrenciaDto.fromDomain(getOcorrenciaById(it.id).getOrThrow()) }
-    }
-
-    override suspend fun insertOcorrenciaCompleta(
-        ocorrencia: com.example.firenotes.data.model.OcorrenciaDto,
-        veiculos: List<com.example.firenotes.data.model.VeiculoDto>,
-        vitimas: List<com.example.firenotes.data.model.VitimaDto>,
-        orgaosApoioIds: List<String>
-    ): Result<Unit> = runCatching {
-        // Converts Dtos back to Domain and saves locally
-        val o = ocorrencia.toDomain()
-        createOcorrencia(o).getOrThrow()
-        veiculos.forEach { addVeiculoEnvolvido(it.toDomain()) }
-        vitimas.forEach { addVitima(it.toDomain()) }
-        orgaosApoioIds.forEach { orgaoId -> vincularOrgaoApoio(o.id ?: "", orgaoId) }
-    }
-
     override suspend fun deleteDocumento(id: String): Result<Unit> = runCatching {
         ocorrenciaDao.deleteDocumento(id)
     }
@@ -579,5 +750,9 @@ class RoomOcorrenciaRepository @Inject constructor(
 
     override suspend fun deleteEvidencia(id: String): Result<Unit> = runCatching {
         ocorrenciaDao.deleteEvidencia(id)
+    }
+
+    override suspend fun deleteOcorrencia(id: String): Result<Unit> = runCatching {
+        ocorrenciaDao.deleteOcorrencia(id)
     }
 }

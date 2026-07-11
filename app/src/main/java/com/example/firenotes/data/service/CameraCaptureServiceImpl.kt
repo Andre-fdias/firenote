@@ -18,7 +18,7 @@ class CameraCaptureServiceImpl @Inject constructor(
 
     override fun createPhotoUri(): Uri {
         try {
-            val file = File(context.cacheDir, "camera_capture_${UUID.randomUUID()}.jpg").canonicalFile
+            val file = File(context.cacheDir, "camera_capture_${UUID.randomUUID()}.jpg")
             val parent = file.parentFile
             if (parent != null && !parent.exists()) {
                 parent.mkdirs()

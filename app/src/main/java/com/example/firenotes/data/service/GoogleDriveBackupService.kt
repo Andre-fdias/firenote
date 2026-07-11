@@ -117,12 +117,14 @@ class GoogleDriveBackupService @Inject constructor(
 
     // --- Google Drive REST API Actions ---
     suspend fun uploadBackupToDrive(accessToken: String): Result<RoomBackupLog> = withContext(Dispatchers.IO) {
+        android.util.Log.d("FireBackup", "Iniciando upload de backup para o Google Drive")
         runCatching {
             val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy_MM_dd_HH_mm"))
             val backupFileName = "Backup_$timestamp.zip"
             val tempZipFile = File(context.cacheDir, backupFileName)
             if (tempZipFile.exists()) tempZipFile.delete()
 
+            android.util.Log.d("FireBackup", "Criando arquivo ZIP local para upload: $backupFileName")
             val size = createBackupZip(tempZipFile).getOrThrow()
 
             // 1. Google Drive Multipart Upload request
@@ -149,11 +151,17 @@ class GoogleDriveBackupService @Inject constructor(
                 .post(requestBody)
                 .build()
 
+            android.util.Log.d("FireBackup", "Enviando arquivo ZIP para API do Google Drive...")
             httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("Falha no upload do Google Drive: ${response.message}")
+                if (!response.isSuccessful) {
+                    val errMsg = "Falha no upload do Google Drive: ${response.message}"
+                    android.util.Log.e("FireBackup", errMsg)
+                    throw IOException(errMsg)
+                }
             }
 
             tempZipFile.delete()
+            android.util.Log.d("FireBackup", "Upload de backup concluído com sucesso. Tamanho: $size bytes")
 
             // Log Success
             val log = RoomBackupLog(
@@ -210,6 +218,7 @@ class GoogleDriveBackupService @Inject constructor(
     }
 
     suspend fun restoreBackupFromDrive(accessToken: String, fileId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        android.util.Log.d("FireBackup", "Iniciando restauração de backup do Google Drive, ID do arquivo: $fileId")
         runCatching {
             val url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
             val request = Request.Builder()
@@ -218,13 +227,20 @@ class GoogleDriveBackupService @Inject constructor(
                 .get()
                 .build()
 
+            android.util.Log.d("FireBackup", "Fazendo download do backup do Google Drive...")
             httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("Erro ao baixar arquivo do Drive: ${response.message}")
+                if (!response.isSuccessful) {
+                    val errMsg = "Erro ao baixar arquivo do Drive: ${response.message}"
+                    android.util.Log.e("FireBackup", errMsg)
+                    throw IOException(errMsg)
+                }
                 val bodyStream = response.body?.byteStream() ?: throw IOException("Corpo do arquivo vazio")
 
                 // Close database before restore overwriting
+                android.util.Log.d("FireBackup", "Fechando banco de dados temporariamente para restauração...")
                 AppDatabase.getDatabase(context).close()
 
+                android.util.Log.d("FireBackup", "Descompactando ZIP e restaurando arquivos...")
                 ZipInputStream(BufferedInputStream(bodyStream)).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
@@ -238,6 +254,7 @@ class GoogleDriveBackupService @Inject constructor(
                             FileOutputStream(dbFile).use { fos ->
                                 zis.copyTo(fos)
                             }
+                            android.util.Log.d("FireBackup", "Arquivo de banco de dados restaurado: ${entry.name}")
                         } else if (entry.name.startsWith("documentos/") || entry.name.startsWith("veiculos/") ||
                             entry.name.startsWith("evidencias/") || entry.name.startsWith("relatorios/")
                         ) {
@@ -263,6 +280,35 @@ class GoogleDriveBackupService @Inject constructor(
                     }
                 }
             }
+            android.util.Log.d("FireBackup", "Restauração de backup concluída com sucesso.")
+            Unit
+        }
+    }
+
+    suspend fun checkAndTriggerAutoDriveBackup(accessToken: String): Result<RoomBackupLog?> = withContext(Dispatchers.IO) {
+        runCatching {
+            val config = ocorrenciaDao.getConfiguracao() ?: return@runCatching null
+            if (config.backupAutomatico == "Desativado") return@runCatching null
+
+            val lastBackupStr = config.ultimoBackupData
+            val lastDate = if (!lastBackupStr.isNullOrBlank()) {
+                try {
+                    val cleanDate = lastBackupStr.substringBefore(" ")
+                    java.time.LocalDate.parse(cleanDate, DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                } catch(e: Exception) { null }
+            } else null
+
+            val today = java.time.LocalDate.now()
+            val shouldBackup = when (config.backupAutomatico) {
+                "Diário" -> lastDate == null || lastDate.isBefore(today)
+                "Semanal" -> lastDate == null || lastDate.isBefore(today.minusWeeks(1))
+                "Mensal" -> lastDate == null || lastDate.isBefore(today.minusMonths(1))
+                else -> false
+            }
+
+            if (shouldBackup) {
+                uploadBackupToDrive(accessToken).getOrThrow()
+            } else null
         }
     }
 }
