@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.firenotes.data.local.AppDatabase
 import com.example.firenotes.data.local.dao.OcorrenciaDao
+import com.example.firenotes.data.local.dao.HomeOperationalDao
 import com.example.firenotes.data.repository.RoomOcorrenciaRepository
 import com.example.firenotes.data.service.LocationServiceImpl
 import com.example.firenotes.data.service.OcrServiceImpl
@@ -103,6 +104,12 @@ abstract class AppModule {
         @Singleton
         fun provideOcorrenciaDao(database: AppDatabase): OcorrenciaDao {
             return database.ocorrenciaDao()
+        }
+
+        @Provides
+        @Singleton
+        fun provideHomeOperationalDao(database: AppDatabase): HomeOperationalDao {
+            return database.homeOperationalDao()
         }
     }
 }

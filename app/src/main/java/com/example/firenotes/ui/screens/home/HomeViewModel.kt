@@ -17,6 +17,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import com.example.firenotes.data.local.dao.HomeOperationalDao
+import com.example.firenotes.data.local.entities.RoomTarefa
+import com.example.firenotes.data.local.entities.RoomEventoAgenda
+import com.example.firenotes.data.local.entities.RoomProntidaoDia
+import java.time.LocalDate
+import java.util.UUID
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -34,6 +40,7 @@ class HomeViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val backupService: com.example.firenotes.data.service.BackupService,
     private val googleDriveBackupService: com.example.firenotes.data.service.GoogleDriveBackupService,
+    private val homeOperationalDao: HomeOperationalDao,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -49,10 +56,107 @@ class HomeViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    // --- Estados do Calendário Local ---
+    private val _selectedDate = MutableStateFlow<LocalDate>(LocalDate.now())
+    val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
+
+    private val _currentMonth = MutableStateFlow<LocalDate>(LocalDate.now().withDayOfMonth(1))
+    val currentMonth: StateFlow<LocalDate> = _currentMonth.asStateFlow()
+
+    private val _allTarefas = MutableStateFlow<List<RoomTarefa>>(emptyList())
+    val allTarefas: StateFlow<List<RoomTarefa>> = _allTarefas.asStateFlow()
+
+    private val _allEventos = MutableStateFlow<List<RoomEventoAgenda>>(emptyList())
+    val allEventos: StateFlow<List<RoomEventoAgenda>> = _allEventos.asStateFlow()
+
+    private val _allProntidoes = MutableStateFlow<List<RoomProntidaoDia>>(emptyList())
+    val allProntidoes: StateFlow<List<RoomProntidaoDia>> = _allProntidoes.asStateFlow()
+
     init {
         loadOccurrences()
         triggerAutoBackups()
         loadWeather()
+        observeHomeData()
+    }
+
+    private fun observeHomeData() {
+        viewModelScope.launch {
+            homeOperationalDao.getAllTarefasFlow().collect { _allTarefas.value = it }
+        }
+        viewModelScope.launch {
+            homeOperationalDao.getAllEventosFlow().collect { _allEventos.value = it }
+        }
+        viewModelScope.launch {
+            homeOperationalDao.getAllProntidoesFlow().collect { _allProntidoes.value = it }
+        }
+    }
+
+    fun selectDate(date: LocalDate) {
+        _selectedDate.value = date
+    }
+
+    fun nextMonth() {
+        _currentMonth.value = _currentMonth.value.plusMonths(1)
+    }
+
+    fun previousMonth() {
+        _currentMonth.value = _currentMonth.value.minusMonths(1)
+    }
+
+    // --- Operações CRUD de Tarefas ---
+    fun addTarefa(titulo: String, data: LocalDate, categoria: String = "Operacional") {
+        if (titulo.isBlank()) return
+        viewModelScope.launch {
+            val novaTarefa = RoomTarefa(
+                id = UUID.randomUUID().toString(),
+                titulo = titulo.trim(),
+                concluida = false,
+                data = data.toString(),
+                categoria = categoria
+            )
+            homeOperationalDao.insertTarefa(novaTarefa)
+        }
+    }
+
+    fun toggleTarefa(tarefa: RoomTarefa) {
+        viewModelScope.launch {
+            homeOperationalDao.updateTarefa(tarefa.copy(concluida = !tarefa.concluida))
+        }
+    }
+
+    fun deleteTarefa(id: String) {
+        viewModelScope.launch {
+            homeOperationalDao.deleteTarefa(id)
+        }
+    }
+
+    // --- Operações CRUD de Eventos ---
+    fun addEvento(titulo: String, descricao: String?, data: LocalDate, horaInicio: String?, horaFim: String?) {
+        if (titulo.isBlank()) return
+        viewModelScope.launch {
+            val novoEvento = RoomEventoAgenda(
+                id = UUID.randomUUID().toString(),
+                titulo = titulo.trim(),
+                descricao = descricao?.trim(),
+                data = data.toString(),
+                horaInicio = horaInicio,
+                horaFim = horaFim
+            )
+            homeOperationalDao.insertEvento(novoEvento)
+        }
+    }
+
+    fun deleteEvento(id: String) {
+        viewModelScope.launch {
+            homeOperationalDao.deleteEvento(id)
+        }
+    }
+
+    // --- Operações de Escala de Prontidão ---
+    fun setProntidaoDia(data: LocalDate, escala: String) {
+        viewModelScope.launch {
+            homeOperationalDao.insertProntidao(RoomProntidaoDia(data.toString(), escala))
+        }
     }
 
     fun refreshAll() {
