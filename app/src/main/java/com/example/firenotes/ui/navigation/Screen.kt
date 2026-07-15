@@ -87,7 +87,17 @@ sealed class Screen(
         selectedIcon = Icons.Filled.Description,
         showInBottomBar = false
     )
-    
+
+    object Agenda : Screen(
+        route = "agenda/{date}",
+        title = "Agenda Operacional",
+        icon = Icons.Outlined.CalendarMonth,
+        selectedIcon = Icons.Filled.CalendarMonth,
+        showInBottomBar = false
+    ) {
+        fun createRoute(date: String): String = "agenda/$date"
+    }
+
     object OccurrenceEdit : Screen(
         route = "occurrence_edit/{occurrenceId}",
         title = "Editar Ocorrência",
@@ -203,6 +213,7 @@ sealed class Screen(
             Settings,
             OccurrenceWizard,
             OccurrenceDetails,
+            OccurrenceEdit,
             Reports,
             PinLock,
             Splash,

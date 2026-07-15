@@ -30,6 +30,9 @@ interface HomeOperationalDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvento(evento: RoomEventoAgenda)
 
+    @Update
+    suspend fun updateEvento(evento: RoomEventoAgenda)
+
     @Query("DELETE FROM eventos_agenda WHERE id = :id")
     suspend fun deleteEvento(id: String)
 

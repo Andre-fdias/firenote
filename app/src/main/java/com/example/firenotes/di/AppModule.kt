@@ -11,7 +11,7 @@ import com.example.firenotes.data.local.dao.HomeOperationalDao
 import com.example.firenotes.data.repository.RoomOcorrenciaRepository
 import com.example.firenotes.data.service.LocationServiceImpl
 import com.example.firenotes.data.service.OcrServiceImpl
-import com.example.firenotes.data.service.OpenMeteoWeatherService
+import com.example.firenotes.data.service.OpenWeatherMapService
 import com.example.firenotes.domain.repository.LocationService
 import com.example.firenotes.domain.repository.OcrService
 import com.example.firenotes.domain.repository.OcorrenciaRepository
@@ -46,7 +46,7 @@ abstract class AppModule {
     @Binds
     @Singleton
     abstract fun bindWeatherService(
-        openMeteoWeatherService: OpenMeteoWeatherService
+        openWeatherMapService: OpenWeatherMapService
     ): WeatherService
 
     @Binds

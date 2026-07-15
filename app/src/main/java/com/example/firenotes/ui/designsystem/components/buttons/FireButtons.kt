@@ -71,7 +71,8 @@ fun FireOutlinedButton(
     enabled: Boolean = true,
     borderColor: Color = FireColor.Primary,
     contentColor: Color = FireColor.Primary,
-    icon: ImageVector? = null
+    icon: ImageVector? = null,
+    height: Dp = 48.dp
 ) {
     OutlinedButton(
         onClick = onClick,
@@ -79,7 +80,7 @@ fun FireOutlinedButton(
         shape = FireShapes.Medium,
         colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor),
         border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.5.dp),
-        modifier = modifier.heightIn(min = 55.dp)
+        modifier = modifier.height(height)
     ) {
         Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,

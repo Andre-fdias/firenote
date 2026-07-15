@@ -23,7 +23,6 @@ enum class GraduacaoMilitar(val descricao: String, val hierarquia: Int) {
     }
 }
 
-// V4 Master Viatura Entity
 data class ViaturaMaster(
     val id: String? = null,
     val prefixo: String,
@@ -37,7 +36,6 @@ data class ViaturaMaster(
     val equipamentos: List<String> = emptyList()
 )
 
-// V4 Master Militar Entity
 data class MilitarMaster(
     val id: String? = null,
     val re: String,
@@ -51,32 +49,22 @@ data class MilitarMaster(
     val email: String? = null
 )
 
-// Transactional Viatura-Ocorrencia Link Entity (Kept as Viatura for compatibility)
 data class Viatura(
-    val id: String? = null,
-    val ocorrenciaId: String,
-    val viaturaMasterId: String? = null, // Link to master viatura catalog
-    val prefixo: String,
-    val tipo: String,
-    val unidade: String? = null, // Quartel/Unidade
-    val kmSaida: Int?,
-    val kmLocal: Int?, // Chegada ao local
+    val id: String = "",
+    val ocorrenciaId: String = "",
+    val prefixo: String = "",                  // Formato: XX-12345 (maiúsculo)
+    val unidade: String = "",
+    val kmSaida: Int? = null,
+    val kmLocal: Int? = null,
+    val observacoes: String = "",
+    val equipe: List<Militar> = emptyList(),
+
+    // Database compatibility fields
+    val viaturaMasterId: String? = null,
+    val tipo: String = "",
     val kmRetorno: Int? = null,
     val horaDespacho: String? = null,
     val horaSaida: String? = null,
     val horaChegada: String? = null,
-    val horaRetorno: String? = null,
-    val observacoes: String? = null,
-    val equipe: List<Militar> = emptyList()
-)
-
-// Transactional Militar-Viatura Link Entity (Kept as Militar for compatibility)
-data class Militar(
-    val id: String? = null,
-    val viaturaId: String, // viatura_ocorrencia_id in DB
-    val militarMasterId: String? = null, // Link to master militar catalog
-    val re: String,
-    val nomeGuerra: String,
-    val graduacao: GraduacaoMilitar,
-    val funcao: String? = null
+    val horaRetorno: String? = null
 )

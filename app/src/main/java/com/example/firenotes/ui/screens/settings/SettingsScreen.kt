@@ -8,43 +8,39 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.firenotes.MainActivity
 import com.example.firenotes.ui.designsystem.colors.FireColors
-import com.example.firenotes.ui.designsystem.shapes.FireShapes
 import com.example.firenotes.ui.designsystem.spacing.FireSpacing
 import com.example.firenotes.ui.designsystem.typography.FireTypography
-import com.example.firenotes.ui.designsystem.icons.FireIcons
-import com.example.firenotes.ui.designsystem.components.topbar.FireTopBar
-import com.example.firenotes.ui.designsystem.components.buttons.*
-import com.example.firenotes.ui.designsystem.components.cards.FireCard
-import com.example.firenotes.ui.designsystem.components.dialogs.FireDialog
-import com.example.firenotes.ui.designsystem.components.widgets.FireDivider
-import com.example.firenotes.ui.designsystem.components.inputs.FireOutlinedTextField
-import com.example.firenotes.ui.designsystem.components.inputs.FireSwitch
-import com.example.firenotes.ui.designsystem.components.inputs.FireRadioButton
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
+import kotlinx.coroutines.delay
+import androidx.activity.result.ActivityResult
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 
-private const val LOG_TAG = "FireSettings"
-private fun logD(message: String) = android.util.Log.d(LOG_TAG, message)
-private fun logE(message: String, throwable: Throwable? = null) = 
-    android.util.Log.e(LOG_TAG, message, throwable)
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
@@ -54,7 +50,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     val activity = context as? Activity
 
-    // Google Sign-In Launcher
+    // Estado para controle de abas
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Geral", "Segurança", "Backup", "Logs")
+
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -66,13 +65,11 @@ fun SettingsScreen(
                     viewModel.connectGoogleDrive(account)
                 }
             } catch (e: Exception) {
-                logE("Erro no login Google", e)
                 viewModel.setError("Falha ao conectar: ${e.localizedMessage}")
             }
         }
     }
 
-    // Google Auth Recovery Launcher
     val recoveryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -90,51 +87,55 @@ fun SettingsScreen(
         }
     }
 
-    // State for dialogs
+    // Estados para diálogos
     var showPinDialog by remember { mutableStateOf(false) }
-    var pinValue by remember { mutableStateOf("") }
-    var pinConfirmValue by remember { mutableStateOf("") }
-    var pinError by remember { mutableStateOf("") }
     var showEraseConfirmDialog by remember { mutableStateOf(false) }
+    var showLogViewerDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            FireTopBar(
-                title = "⚙️ Configurações",
-                backgroundColor = FireColors.Surface,
-                elevation = 2.dp
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Configurações",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                modifier = Modifier
             )
         },
-        containerColor = FireColors.Background,
-        modifier = modifier
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(FireColors.Background)
-                .verticalScroll(rememberScrollState())
-                .padding(FireSpacing.Medium),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Large)
         ) {
-            // ============================================
-            // MENSAGENS
-            // ============================================
+            // Mensagens de feedback
             AnimatedVisibility(
                 visible = uiState.infoMessage != null || uiState.errorMessage != null,
                 enter = fadeIn() + slideInVertically(),
                 exit = fadeOut() + slideOutVertically()
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     if (uiState.infoMessage != null) {
-                        InfoCard(
+                        InfoBanner(
                             message = uiState.infoMessage!!,
                             type = "success",
                             onDismiss = viewModel::clearMessages
                         )
                     }
                     if (uiState.errorMessage != null) {
-                        InfoCard(
+                        InfoBanner(
                             message = uiState.errorMessage!!,
                             type = "error",
                             onDismiss = viewModel::clearMessages
@@ -143,327 +144,88 @@ fun SettingsScreen(
                 }
             }
 
-            // ============================================
-            // SEÇÃO 1: SEGURANÇA
-            // ============================================
-            SectionHeader(title = "🔐 Segurança e Acesso", icon = FireIcons.Lock)
-            FireCard(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(FireSpacing.Medium),
-                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
-                ) {
-                    // PIN
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("🔑 Acesso por PIN", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = if (uiState.pinEnabled) "✓ PIN ativado" else "Desativado",
-                                style = FireTypography.Caption,
-                                color = if (uiState.pinEnabled) FireColors.Success else FireColors.OnSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = uiState.pinEnabled,
-                            onCheckedChange = { checked ->
-                                if (checked) {
-                                    pinValue = ""
-                                    pinConfirmValue = ""
-                                    pinError = ""
-                                    showPinDialog = true
-                                } else {
-                                    viewModel.updatePin("", false)
-                                }
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = FireColors.Primary,
-                                uncheckedTrackColor = FireColors.OnSurfaceVariant.copy(alpha = 0.3f)
-                            )
-                        )
-                    }
-
-                    if (uiState.pinEnabled) {
-                        FireButton(
-                            text = "🔄 Alterar código PIN",
-                            onClick = {
-                                pinValue = uiState.pinCode
-                                pinConfirmValue = ""
-                                pinError = ""
-                                showPinDialog = true
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            containerColor = FireColors.Secondary
-                        )
-                    }
-
-                    FireDivider()
-
-                    // Biometria
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("🔓 Autenticação Biométrica", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = if (uiState.biometricEnabled) "✓ Usando impressão digital ou facial" else "Desativado",
-                                style = FireTypography.Caption,
-                                color = if (uiState.biometricEnabled) FireColors.Success else FireColors.OnSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = uiState.biometricEnabled,
-                            onCheckedChange = viewModel::updateBiometric,
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = FireColors.Primary,
-                                uncheckedTrackColor = FireColors.OnSurfaceVariant.copy(alpha = 0.3f)
-                            )
-                        )
-                    }
-
-                    if (uiState.biometricEnabled) {
-                        Text(
-                            text = "ℹ️ A biometria será solicitada ao abrir o app",
-                            style = FireTypography.Caption,
-                            color = FireColors.OnSurfaceVariant,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                }
-            }
-
-            // ============================================
-            // SEÇÃO 2: BACKUP (GOOGLE DRIVE)
-            // ============================================
-            SectionHeader(title = "☁️ Backup & Restauração", icon = FireIcons.Cloud)
-            FireCard(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(FireSpacing.Medium),
-                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
-                ) {
-                    // Status da conta
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("📧 Google Drive", style = FireTypography.Title, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = if (uiState.isGoogleConnected) {
-                                    "✓ Conectado como: ${uiState.googleAccountName}"
-                                } else {
-                                    "Não conectado"
-                                },
-                                style = FireTypography.Caption,
-                                color = if (uiState.isGoogleConnected) FireColors.Success else FireColors.OnSurfaceVariant
-                            )
-                        }
-                        if (uiState.isGoogleConnected) {
-                            FireButton(
-                                text = "Desconectar",
-                                onClick = viewModel::disconnectGoogleDrive,
-                                containerColor = FireColors.Error,
-                                modifier = Modifier
-                            )
-                        } else {
-                            FireButton(
-                                text = "🔗 Conectar Drive",
-                                onClick = {
-                                    val client = viewModel.googleDriveBackupService.getGoogleSignInClient()
-                                    googleSignInLauncher.launch(client.signInIntent)
-                                },
-                                icon = FireIcons.Cloud,
-                                modifier = Modifier
-                            )
-                        }
-                    }
-
-                    FireDivider()
-
-                    // Frequência de Backup
-                    Column(verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)) {
-                        Text("⏰ Periodicidade", style = FireTypography.Label, fontWeight = FontWeight.Bold)
-                        var expandedF by remember { mutableStateOf(false) }
-                        Box {
-                            FireOutlinedButton(
-                                text = uiState.config.backupAutomatico,
-                                onClick = { expandedF = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                icon = FireIcons.ArrowDropDown
-                            )
-                            DropdownMenu(
-                                expanded = expandedF,
-                                onDismissRequest = { expandedF = false },
-                                modifier = Modifier.background(FireColors.Surface)
-                            ) {
-                                listOf("Nunca", "Diário", "Semanal", "Mensal").forEach { f ->
-                                    DropdownMenuItem(
-                                        text = { Text(f, style = FireTypography.Body) },
-                                        onClick = {
-                                            viewModel.updateBackupFrequency(f)
-                                            expandedF = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    FireSwitch(
-                        checked = uiState.config.backupSomenteWifi,
-                        onCheckedChange = viewModel::updateBackupWifiOnly,
-                        label = "📶 Apenas em Wi-Fi"
+            // Abas de navegação
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                edgePadding = 16.dp,
+                indicator = { tabPositions ->
+                    TabRowDefaults.Indicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                        height = 3.dp,
+                        color = MaterialTheme.colorScheme.primary
                     )
-
-                    FireDivider()
-
-                    // Último backup
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("🕐 Último Backup:", style = FireTypography.Label, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            text = uiState.config.ultimoBackupData ?: "Pendente",
-                            style = FireTypography.Label,
-                            color = FireColors.OnSurfaceVariant
-                        )
-                    }
-
-                    // Botões de ação
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-                    ) {
-                        FireButton(
-                            text = if (uiState.isProcessing) "⏳ Enviando..." else "📤 Backup Agora",
-                            onClick = viewModel::performDriveBackup,
-                            enabled = !uiState.isProcessing && uiState.isGoogleConnected,
-                            icon = FireIcons.CloudUpload,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        FireButton(
-                            text = if (uiState.isProcessing) "⏳ Carregando..." else "📥 Restaurar",
-                            onClick = viewModel::fetchDriveBackups,
-                            enabled = !uiState.isProcessing && uiState.isGoogleConnected,
-                            containerColor = FireColors.Secondary,
-                            icon = FireIcons.CloudDownload,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    // Progresso
-                    if (uiState.isProcessing) {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(4.dp),
-                            color = FireColors.Primary,
-                            trackColor = FireColors.SurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // ============================================
-            // SEÇÃO 3: APARÊNCIA
-            // ============================================
-            SectionHeader(title = "🎨 Aparência e Temas", icon = FireIcons.Palette)
-            FireCard(
-                modifier = Modifier.fillMaxWidth()
+                },
+                divider = {}
             ) {
-                Column(modifier = Modifier.padding(FireSpacing.Small)) {
-                    listOf("Claro", "Escuro", "Automático").forEach { key ->
-                        val themeName = when (key) {
-                            "Claro" -> "Claro ☀️"
-                            "Escuro" -> "Escuro 🌙"
-                            else -> "Automático 🔄"
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.updateTheme(key) }
-                                .padding(vertical = FireSpacing.Small, horizontal = FireSpacing.Medium)
-                        ) {
-                            FireRadioButton(
-                                selected = uiState.config.tema == key,
-                                onClick = { viewModel.updateTheme(key) },
-                                label = themeName
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal
                             )
-                        }
-                    }
+                        },
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
                 }
             }
 
-            // ============================================
-            // SEÇÃO 4: DADOS
-            // ============================================
-            SectionHeader(title = "🗑️ Gerenciamento de Dados", icon = FireIcons.Delete)
-            FireButton(
-                text = "⚠️ EXCLUIR TODOS OS DADOS",
-                onClick = { showEraseConfirmDialog = true },
-                containerColor = FireColors.Error,
-                icon = FireIcons.DeleteForever,
-                modifier = Modifier.fillMaxWidth()
-            )
-            
-            // Versão do app
-            Text(
-                text = "Fire Notes v2.0",
-                style = FireTypography.Caption,
-                color = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
+            // Conteúdo das abas
+            when (selectedTab) {
+                0 -> GeneralSettingsTab(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    showEraseConfirmDialog = showEraseConfirmDialog,
+                    onShowEraseDialog = { showEraseConfirmDialog = true },
+                    onDismissEraseDialog = { showEraseConfirmDialog = false }
+                )
+                1 -> SecuritySettingsTab(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    showPinDialog = showPinDialog,
+                    onShowPinDialog = { showPinDialog = true },
+                    onDismissPinDialog = { showPinDialog = false }
+                )
+                2 -> BackupSettingsTab(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    googleSignInLauncher = googleSignInLauncher
+                )
+                3 -> LogSettingsTab(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    showLogViewerDialog = showLogViewerDialog,
+                    onShowLogViewer = { showLogViewerDialog = true },
+                    onDismissLogViewer = { showLogViewerDialog = false }
+                )
+            }
         }
     }
 
-    // ============================================
-    // DIÁLOGOS
-    // ============================================
-
-    // PIN Setup Dialog
+    // Diálogos
     if (showPinDialog) {
         PinSetupDialog(
-            pinValue = pinValue,
-            pinConfirmValue = pinConfirmValue,
-            pinError = pinError,
-            onPinChange = { pinValue = it },
-            onPinConfirmChange = { pinConfirmValue = it },
+            pinValue = uiState.pinCode,
+            pinConfirmValue = uiState.pinConfirmValue ?: "",
+            pinError = uiState.pinError ?: "",
+            onPinChange = { viewModel.updatePinCode(it) },
+            onPinConfirmChange = { viewModel.updatePinConfirm(it) },
             onSave = {
-                if (pinValue.length != 4) {
-                    pinError = "O PIN deve ter 4 dígitos."
-                    return@PinSetupDialog
-                }
-                if (pinValue != pinConfirmValue) {
-                    pinError = "Os PINs não coincidem."
-                    return@PinSetupDialog
-                }
-                viewModel.updatePin(pinValue, true)
+                viewModel.savePin()
                 showPinDialog = false
-                pinError = ""
             },
             onDismiss = {
                 showPinDialog = false
-                pinError = ""
+                viewModel.clearPinError()
             }
         )
     }
 
-    // Erase Confirmation Dialog
     if (showEraseConfirmDialog) {
         EraseConfirmationDialog(
             onConfirm = {
@@ -482,7 +244,6 @@ fun SettingsScreen(
         )
     }
 
-    // Restore Dialog
     if (uiState.showRestoreDialog) {
         RestoreDialog(
             backups = uiState.driveBackups,
@@ -501,6 +262,535 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showLogViewerDialog) {
+        LogViewerDialog(
+            logContent = uiState.logContent ?: "Nenhum log disponível",
+            onDismiss = {
+                showLogViewerDialog = false
+                viewModel.clearLogContent()
+            },
+            onExport = {
+                viewModel.exportLogs { uri ->
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Compartilhar Logs"))
+                }
+            },
+            onClear = {
+                viewModel.clearLogs()
+                showLogViewerDialog = false
+            }
+        )
+    }
+}
+
+// ============================================
+// ABA 1: CONFIGURAÇÕES GERAIS
+// ============================================
+
+@Composable
+private fun GeneralSettingsTab(
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
+    showEraseConfirmDialog: Boolean,
+    onShowEraseDialog: () -> Unit,
+    onDismissEraseDialog: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Tema
+        item {
+            PreferenceCard(
+                title = "Tema",
+                subtitle = "Escolha o tema do aplicativo",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                TemaSelector(
+                    selectedTheme = uiState.config.tema ?: "Automático",
+                    onThemeSelected = viewModel::updateTheme
+                )
+            }
+        }
+
+        // Idioma
+        item {
+            PreferenceCard(
+                title = "Idioma",
+                subtitle = "Selecionar idioma do aplicativo",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                IdiomaSelector(
+                    selectedLanguage = uiState.idioma,
+                    onLanguageSelected = viewModel::updateLanguage
+                )
+            }
+        }
+
+        // Data/Hora
+        item {
+            PreferenceCard(
+                title = "Formato de Data/Hora",
+                subtitle = "Escolha o formato preferido",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                DateTimeFormatSelector(
+                    selectedFormat = uiState.formatoData,
+                    onFormatSelected = viewModel::updateDateTimeFormat
+                )
+            }
+        }
+
+        // Unidades
+        item {
+            PreferenceCard(
+                title = "Sistema de Unidades",
+                subtitle = "Escolha entre unidades métricas e imperiais",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                UnitSystemSelector(
+                    selectedSystem = uiState.sistemaUnidades,
+                    onSystemSelected = viewModel::updateUnitSystem
+                )
+            }
+        }
+
+        // Limpeza de dados
+        item {
+            Divider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Gerenciamento de Dados",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Exclua permanentemente todos os dados do aplicativo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onShowEraseDialog,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Excluir Todos os Dados")
+                    }
+                }
+            }
+        }
+
+        // Versão
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Fire Notes v8.3 • Seguro",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
+    }
+}
+
+// ============================================
+// ABA 2: SEGURANÇA
+// ============================================
+
+@Composable
+private fun SecuritySettingsTab(
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
+    showPinDialog: Boolean,
+    onShowPinDialog: () -> Unit,
+    onDismissPinDialog: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // PIN
+        item {
+            SwitchPreferenceCard(
+                title = "Acesso por PIN",
+                subtitle = if (uiState.pinEnabled) "PIN ativado - 4 dígitos" else "Desativado",
+                checked = uiState.pinEnabled,
+                onCheckedChange = { checked ->
+                    if (checked) {
+                        onShowPinDialog()
+                    } else {
+                        viewModel.updatePin("", false)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Alterar PIN (se ativado)
+        if (uiState.pinEnabled) {
+            item {
+                TextButton(
+                    onClick = onShowPinDialog,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text("Alterar código PIN")
+                }
+            }
+        }
+
+        // Biometria
+        item {
+            SwitchPreferenceCard(
+                title = "Autenticação Biométrica",
+                subtitle = if (uiState.biometricEnabled)
+                    "Usando impressão digital ou facial"
+                else "Desativado",
+                checked = uiState.biometricEnabled,
+                onCheckedChange = viewModel::updateBiometric,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Status de segurança
+        item {
+            Divider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+        }
+
+        item {
+            SecurityStatusCard(
+                isEncrypted = uiState.pinEnabled || uiState.biometricEnabled,
+                lastAccess = uiState.lastAccessTime ?: "Nunca"
+            )
+        }
+    }
+}
+
+// ============================================
+// ABA 3: BACKUP
+// ============================================
+
+@Composable
+private fun BackupSettingsTab(
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
+    googleSignInLauncher: androidx.activity.compose.ManagedActivityResultLauncher<Intent, ActivityResult>
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Conexão Google Drive
+        item {
+            PreferenceCard(
+                title = "Google Drive",
+                subtitle = if (uiState.isGoogleConnected)
+                    "Conectado como ${uiState.googleAccountName}"
+                else "Não conectado",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (uiState.isGoogleConnected) {
+                        OutlinedButton(
+                            onClick = viewModel::disconnectGoogleDrive,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Desconectar")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                val client = viewModel.googleDriveBackupService.getGoogleSignInClient()
+                                googleSignInLauncher.launch(client.signInIntent)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Conectar Google Drive")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Frequência de backup
+        item {
+            PreferenceCard(
+                title = "Frequência de Backup",
+                subtitle = "Backup automático: ${uiState.config.backupAutomatico ?: "Nunca"}",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                FrequencySelector(
+                    selectedFrequency = uiState.config.backupAutomatico ?: "Nunca",
+                    onFrequencySelected = viewModel::updateBackupFrequency
+                )
+            }
+        }
+
+        // Wi-Fi only
+        item {
+            SwitchPreferenceCard(
+                title = "Apenas em Wi-Fi",
+                subtitle = if (uiState.config.backupSomenteWifi ?: false)
+                    "Backup apenas em redes Wi-Fi"
+                else "Permitir backup em dados móveis",
+                checked = uiState.config.backupSomenteWifi ?: false,
+                onCheckedChange = viewModel::updateBackupWifiOnly,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Último backup
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Último Backup",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = uiState.config.ultimoBackupData ?: "Pendente",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        // Ações de backup
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = viewModel::performDriveBackup,
+                    enabled = !uiState.isProcessing && uiState.isGoogleConnected,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (uiState.isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Backup")
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = viewModel::fetchDriveBackups,
+                    enabled = !uiState.isProcessing && uiState.isGoogleConnected,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Restaurar")
+                }
+            }
+        }
+
+        // Indicador de progresso
+        if (uiState.isProcessing) {
+            item {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+// ============================================
+// ABA 4: LOGS
+// ============================================
+
+@Composable
+private fun LogSettingsTab(
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
+    showLogViewerDialog: Boolean,
+    onShowLogViewer: () -> Unit,
+    onDismissLogViewer: () -> Unit
+) {
+    val context = LocalContext.current
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Nível de log
+        item {
+            PreferenceCard(
+                title = "Nível de Registro",
+                subtitle = "Nível atual: ${uiState.logLevel}",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                LogLevelSelector(
+                    selectedLevel = uiState.logLevel,
+                    onLevelSelected = viewModel::updateLogLevel
+                )
+            }
+        }
+
+        // Tamanho do arquivo
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Tamanho do arquivo de log",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = uiState.logSize,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Botão Visualizar Logs
+        item {
+            Button(
+                onClick = {
+                    viewModel.loadLogContent()
+                    onShowLogViewer()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Visualizar Logs")
+            }
+        }
+
+        // Botões de ação
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        viewModel.exportLogs { uri ->
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Compartilhar Logs"))
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Exportar")
+                }
+
+                OutlinedButton(
+                    onClick = viewModel::clearLogs,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Limpar")
+                }
+            }
+        }
+
+        // Informações adicionais
+        item {
+            Divider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Diagnóstico",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Os logs contêm informações de auditoria e diagnósticos para auxiliar na resolução de problemas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        }
+    }
 }
 
 // ============================================
@@ -508,76 +798,133 @@ fun SettingsScreen(
 // ============================================
 
 @Composable
-private fun SectionHeader(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = FireColors.Primary,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = title,
-            style = FireTypography.Title,
-            fontWeight = FontWeight.Bold,
-            color = FireColors.Primary
-        )
+private fun PreferenceCard(
+    title: String,
+    subtitle: String? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            subtitle?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            content()
+        }
     }
 }
 
 @Composable
-private fun InfoCard(
-    message: String,
-    type: String,
-    onDismiss: () -> Unit
+private fun SwitchPreferenceCard(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val (bgColor, textColor, icon) = when (type) {
-        "success" -> Triple(
-            Color(0xFFE8F5E9),
-            Color(0xFF1B5E20),
-            FireIcons.CheckCircle
-        )
-        else -> Triple(
-            Color(0xFFFFEBEE),
-            Color(0xFFB71C1C),
-            FireIcons.Error
-        )
-    }
-    
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = bgColor
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(FireSpacing.Medium),
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(24.dp)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             )
-            Spacer(modifier = Modifier.width(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun InfoBanner(
+    message: String,
+    type: String,
+    onDismiss: () -> Unit
+) {
+    val (bgColor, textColor) = when (type) {
+        "success" -> Pair(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer
+        )
+        else -> Pair(
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer
+        )
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = bgColor
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = message,
+                style = MaterialTheme.typography.bodyMedium,
                 color = textColor,
-                style = FireTypography.Body,
-                fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f)
             )
             IconButton(
                 onClick = onDismiss,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(28.dp)
             ) {
                 Icon(
-                    FireIcons.Close,
+                    imageVector = Icons.Default.Close,
                     contentDescription = "Fechar",
                     tint = textColor,
                     modifier = Modifier.size(16.dp)
@@ -586,6 +933,258 @@ private fun InfoCard(
         }
     }
 }
+
+@Composable
+private fun SecurityStatusCard(
+    isEncrypted: Boolean,
+    lastAccess: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isEncrypted)
+                MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (isEncrypted)
+                    MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = if (isEncrypted) "🔒" else "🔓",
+                        fontSize = 18.sp
+                    )
+                }
+            }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = if (isEncrypted) "Dispositivo Seguro" else "Modo de Acesso Livre",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isEncrypted)
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Último acesso: $lastAccess",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isEncrypted)
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+// ============================================
+// SELETORES
+// ============================================
+
+@Composable
+private fun TemaSelector(
+    selectedTheme: String,
+    onThemeSelected: (String) -> Unit
+) {
+    val themes = listOf("Automático", "Claro", "Escuro")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        themes.forEach { theme ->
+            val isSelected = theme == selectedTheme
+            FilterChip(
+                selected = isSelected,
+                onClick = { onThemeSelected(theme) },
+                label = { Text(theme, style = MaterialTheme.typography.labelMedium) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun IdiomaSelector(
+    selectedLanguage: String,
+    onLanguageSelected: (String) -> Unit
+) {
+    val languages = listOf("Português (BR)", "Inglês (US)", "Espanhol (ES)")
+    var expanded by remember { mutableStateOf(false) }
+
+    OutlinedButton(
+        onClick = { expanded = true },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(selectedLanguage)
+        Spacer(modifier = Modifier.weight(1f))
+        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+    }
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false },
+        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+    ) {
+        languages.forEach { lang ->
+            DropdownMenuItem(
+                text = { Text(lang) },
+                onClick = {
+                    onLanguageSelected(lang)
+                    expanded = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun DateTimeFormatSelector(
+    selectedFormat: String,
+    onFormatSelected: (String) -> Unit
+) {
+    val formats = listOf("DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        formats.forEach { format ->
+            val isSelected = format == selectedFormat
+            FilterChip(
+                selected = isSelected,
+                onClick = { onFormatSelected(format) },
+                label = { Text(format, style = MaterialTheme.typography.labelMedium) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun UnitSystemSelector(
+    selectedSystem: String,
+    onSystemSelected: (String) -> Unit
+) {
+    val systems = listOf("Métrico", "Imperial")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        systems.forEach { system ->
+            val isSelected = system == selectedSystem
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSystemSelected(system) },
+                label = { Text(system, style = MaterialTheme.typography.labelMedium) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun FrequencySelector(
+    selectedFrequency: String,
+    onFrequencySelected: (String) -> Unit
+) {
+    val frequencies = listOf("Nunca", "Diário", "Semanal", "Mensal")
+    var expanded by remember { mutableStateOf(false) }
+
+    OutlinedButton(
+        onClick = { expanded = true },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(selectedFrequency)
+        Spacer(modifier = Modifier.weight(1f))
+        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+    }
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false },
+        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+    ) {
+        frequencies.forEach { freq ->
+            DropdownMenuItem(
+                text = { Text(freq) },
+                onClick = {
+                    onFrequencySelected(freq)
+                    expanded = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun LogLevelSelector(
+    selectedLevel: String,
+    onLevelSelected: (String) -> Unit
+) {
+    val levels = listOf("DEBUG", "INFO", "WARN", "ERROR")
+    var expanded by remember { mutableStateOf(false) }
+
+    OutlinedButton(
+        onClick = { expanded = true },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Nível: $selectedLevel")
+        Spacer(modifier = Modifier.weight(1f))
+        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+    }
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false },
+        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+    ) {
+        levels.forEach { level ->
+            DropdownMenuItem(
+                text = { Text(level) },
+                onClick = {
+                    onLevelSelected(level)
+                    expanded = false
+                }
+            )
+        }
+    }
+}
+
+// ============================================
+// DIÁLOGOS
+// ============================================
 
 @Composable
 private fun PinSetupDialog(
@@ -597,66 +1196,78 @@ private fun PinSetupDialog(
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    FireDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        title = "🔑 Configurar PIN",
-        confirmButton = {
-            FireButton(
-                text = "Salvar",
-                onClick = onSave,
-                containerColor = FireColors.Primary,
-                modifier = Modifier.fillMaxWidth()
+        title = {
+            Text(
+                text = "Configurar PIN",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
             )
         },
-        dismissButton = {
-            FireTextButton(text = "Cancelar", onClick = onDismiss)
-        }
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
-        ) {
-            Text(
-                text = "Digite um PIN de 4 dígitos para proteger o aplicativo.",
-                style = FireTypography.Body,
-                color = FireColors.OnSurfaceVariant
-            )
-            
-            FireOutlinedTextField(
-                value = pinValue,
-                onValueChange = { 
-                    if (it.length <= 4) {
-                        onPinChange(it)
-                    }
-                },
-                label = "Novo PIN",
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
-            
-            FireOutlinedTextField(
-                value = pinConfirmValue,
-                onValueChange = { 
-                    if (it.length <= 4) {
-                        onPinConfirmChange(it)
-                    }
-                },
-                label = "Confirmar PIN",
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
-            
-            if (pinError.isNotEmpty()) {
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
-                    text = "⚠️ $pinError",
-                    style = FireTypography.Caption,
-                    color = FireColors.Error
+                    text = "Digite um PIN de 4 dígitos para proteger o aplicativo.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = pinValue,
+                    onValueChange = {
+                        if (it.length <= 4) onPinChange(it)
+                    },
+                    label = { Text("Novo PIN") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = {
+                        Text(
+                            text = "${pinValue.length}/4 dígitos",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
+
+                OutlinedTextField(
+                    value = pinConfirmValue,
+                    onValueChange = {
+                        if (it.length <= 4) onPinConfirmChange(it)
+                    },
+                    label = { Text("Confirmar PIN") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = pinError.isNotEmpty(),
+                    supportingText = {
+                        if (pinError.isNotEmpty()) {
+                            Text(
+                                text = pinError,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 )
             }
+        },
+        confirmButton = {
+            Button(onClick = onSave) {
+                Text("Salvar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
         }
-    }
+    )
 }
 
 @Composable
@@ -664,27 +1275,85 @@ private fun EraseConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    FireDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        title = "⚠️ Excluir Definitivamente?",
-        confirmButton = {
-            FireButton(
-                text = "SIM, APAGAR TUDO",
-                onClick = onConfirm,
-                containerColor = FireColors.Error,
-                icon = FireIcons.DeleteForever,
-                modifier = Modifier.fillMaxWidth()
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
             )
         },
+        title = {
+            Text(
+                text = "Excluir Todos os Dados?",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Esta ação irá apagar permanentemente:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                BulletList(
+                    items = listOf(
+                        "Todas as ocorrências registradas",
+                        "Dados de vítimas e veículos",
+                        "Arquivos de mídia anexados",
+                        "Configurações personalizadas"
+                    )
+                )
+                Text(
+                    text = "Esta ação não poderá ser desfeita.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text("Excluir Tudo")
+            }
+        },
         dismissButton = {
-            FireTextButton(text = "Cancelar", onClick = onDismiss)
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
         }
+    )
+}
+
+@Composable
+private fun BulletList(items: List<String>) {
+    Column(
+        modifier = Modifier.padding(start = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(
-            text = "Esta ação irá apagar permanentemente todas as ocorrências, vítimas, veículos, arquivos de mídia e configurações armazenados localmente. Esta ação não poderá ser desfeita.",
-            style = FireTypography.Body,
-            color = FireColors.OnBackground
-        )
+        items.forEach { item ->
+            Row {
+                Text(
+                    text = "• ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = item,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
@@ -695,94 +1364,265 @@ private fun RestoreDialog(
     onDismiss: () -> Unit,
     onRestore: (String) -> Unit
 ) {
-    FireDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        title = "📥 Restaurar Backup",
-        confirmButton = {
-            FireTextButton(text = "Fechar", onClick = onDismiss)
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
-        ) {
+        title = {
             Text(
-                text = "Selecione um backup para restaurar:",
-                style = FireTypography.Body,
-                color = FireColors.OnSurfaceVariant
+                text = "Restaurar Backup",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
             )
-            
-            if (isProcessing) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp),
-                    color = FireColors.Primary
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+            ) {
+                Text(
+                    text = "Selecione um backup para restaurar:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            
-            if (backups.isEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = FireColors.SurfaceVariant.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Text(
-                        text = "📭 Nenhum backup encontrado",
-                        style = FireTypography.Body,
-                        color = FireColors.OnSurfaceVariant,
+
+                if (isProcessing) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            } else {
-                backups.forEach { file ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { if (!isProcessing) onRestore(file.id) }
-                            .shadow(1.dp, RoundedCornerShape(8.dp)),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = FireColors.Surface
-                        )
+                            .height(100.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(32.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Carregando...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else if (backups.isEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Nenhum backup encontrado no Drive",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(FireSpacing.Medium)
-                        ) {
-                            Text(
-                                text = "📄 ${file.name}",
-                                style = FireTypography.Body,
-                                fontWeight = FontWeight.Bold,
-                                color = FireColors.OnBackground
+                                .padding(16.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(backups) { file ->
+                            BackupItemCard(
+                                file = file,
+                                onRestore = { onRestore(file.id) }
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Fechar")
+            }
+        }
+    )
+}
+
+@Composable
+private fun BackupItemCard(
+    file: com.example.firenotes.data.service.DriveFile,
+    onRestore: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onRestore() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = file.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = formatFileSize(file.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = formatDateTime(file.createdTime),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.Default.Restore,
+                contentDescription = "Restaurar",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun LogViewerDialog(
+    logContent: String,
+    onDismiss: () -> Unit,
+    onExport: () -> Unit,
+    onClear: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Visualizar Logs",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+            ) {
+                // Controles rápidos
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onExport,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Exportar")
+                    }
+                    OutlinedButton(
+                        onClick = onClear,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Limpar")
+                    }
+                }
+
+                // Conteúdo do log
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp)
+                    ) {
+                        if (logContent.isEmpty() || logContent == "Nenhum log disponível") {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "Tamanho: ${file.size / 1024} KB",
-                                    style = FireTypography.Caption,
-                                    color = FireColors.OnSurfaceVariant
+                                    text = "Nenhum log disponível",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                Text(
-                                    text = file.createdTime.take(16).replace("T", " "),
-                                    style = FireTypography.Caption,
-                                    color = FireColors.OnSurfaceVariant
-                                )
+                            }
+                        } else {
+                            // Scrollable log content
+                            androidx.compose.foundation.lazy.LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                reverseLayout = true
+                            ) {
+                                item {
+                                    Text(
+                                        text = logContent,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                            fontSize = 10.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Fechar")
+            }
         }
+    )
+}
+
+// ============================================
+// FUNÇÕES AUXILIARES
+// ============================================
+
+private fun formatFileSize(size: Long): String {
+    return when {
+        size < 1024 -> "$size B"
+        size < 1024 * 1024 -> "${size / 1024} KB"
+        else -> "${size / (1024 * 1024)} MB"
+    }
+}
+
+private fun formatDateTime(dateTime: String): String {
+    return try {
+        val parts = dateTime.split("T")
+        val date = parts[0].split("-")
+        val time = parts.getOrNull(1)?.substring(0, 5) ?: ""
+        "${date[2]}/${date[1]}/${date[0]} $time"
+    } catch (_: Exception) {
+        dateTime
     }
 }

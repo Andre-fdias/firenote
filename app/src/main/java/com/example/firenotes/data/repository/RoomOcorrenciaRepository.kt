@@ -63,7 +63,12 @@ class RoomOcorrenciaRepository @Inject constructor(
             historico = ocorrencia.historico,
             fotos = json.encodeToString(ocorrencia.fotos)
         )
-        ocorrenciaDao.insertOcorrencia(roomOcorrencia)
+        val existing = ocorrenciaDao.getOcorrenciaById(id)
+        if (existing != null) {
+            ocorrenciaDao.updateOcorrencia(roomOcorrencia)
+        } else {
+            ocorrenciaDao.insertOcorrencia(roomOcorrencia)
+        }
 
         val existingAddr = ocorrenciaDao.getEnderecoForOcorrencia(id)
         val roomEndereco = RoomEndereco(
@@ -90,6 +95,7 @@ class RoomOcorrenciaRepository @Inject constructor(
         val roomApoios = ocorrenciaDao.getApoioForOcorrencia(id)
 
         // Maps related
+        // Maps related
         val veiculosList = roomVeiculos.map { rv ->
             val ocrMap = try { json.decodeFromString<Map<String, String>>(rv.ocrDadosEstruturados) } catch (e: Exception) { emptyMap() }
             VeiculoEnvolvido(
@@ -97,22 +103,22 @@ class RoomOcorrenciaRepository @Inject constructor(
                 ocorrenciaId = id,
                 veiculoMasterId = rv.veiculoMasterId,
                 condutorId = rv.condutorId,
-                placa = rv.placa,
-                cor = rv.cor,
-                chassi = rv.chassi,
-                modelo = rv.modelo,
-                ano = rv.ano,
+                placa = rv.placa ?: "",
+                cor = rv.cor ?: "",
+                chassi = rv.chassi ?: "",
+                modelo = rv.modelo ?: "",
+                ano = if (rv.anoFabricacao != null && rv.anoModelo != null) "${rv.anoFabricacao}/${rv.anoModelo}" else rv.ano?.toString() ?: "",
                 renavam = rv.renavam,
                 monobloco = rv.monobloco,
                 especie = rv.especie,
                 tipoVeiculo = rv.tipoVeiculo,
                 carroceria = rv.carroceria,
-                marca = rv.marca,
-                versao = rv.versao,
+                marca = rv.marca ?: "",
+                versao = rv.versao ?: "",
                 anoFabricacao = rv.anoFabricacao,
                 anoModelo = rv.anoModelo,
                 categoriaVeiculo = rv.categoriaVeiculo,
-                exercicio = rv.exercicio,
+                exercicio = rv.exercicio ?: "",
                 urlCrlv = rv.urlCrlv,
                 ocrTextoCrlv = rv.ocrTextoCrlv,
                 ocrDadosEstruturados = ocrMap,
@@ -121,27 +127,74 @@ class RoomOcorrenciaRepository @Inject constructor(
         }
 
         val vitimasList = roomVitimas.map { rv ->
+            val parsedNomeMedico = if (rv.observacoesMedicas?.startsWith("Médico: ") == true) {
+                rv.observacoesMedicas.substringAfter("Médico: ").substringBefore(" | CRM: ")
+            } else {
+                ""
+            }
+            val parsedCrmMedico = if (rv.observacoesMedicas?.contains(" | CRM: ") == true) {
+                rv.observacoesMedicas.substringAfter(" | CRM: ")
+            } else {
+                ""
+            }
+            // Deserialize structured lesions
+            val lesoesEstruturadas = rv.lesoesJson
+                ?.split("|")
+                ?.mapNotNull { entry ->
+                    val parts = entry.split(":")
+                    if (parts.size == 2) {
+                        runCatching {
+                            com.example.firenotes.domain.model.Lesao(
+                                regiao = com.example.firenotes.domain.model.RegiaoCorporal.valueOf(parts[0]),
+                                tipo = com.example.firenotes.domain.model.TipoFerimento.valueOf(parts[1])
+                            )
+                        }.getOrNull()
+                    } else null
+                } ?: emptyList()
             Vitima(
                 id = rv.id,
                 ocorrenciaId = id,
-                nome = rv.nome,
+                nome = rv.nome ?: "",
                 idade = rv.idade,
-                lesoesAparentes = rv.lesoesAparentes,
-                destinoSocorro = rv.destinoSocorro,
-                quemSocorreu = rv.quemSocorreu,
-                resultadoOcorrencia = rv.resultadoOcorrencia,
                 pessoaId = rv.pessoaId,
+                lesoes = rv.lesoesAparentes ?: "",
+                lesoesEstruturadas = lesoesEstruturadas,
+                destinoSocorro = rv.destinoSocorro ?: "",
+                quemSocorreu = rv.quemSocorreu ?: "",
+                resultadoOcorrencia = rv.resultadoOcorrencia ?: "",
                 viaturaSocorroId = rv.viaturaSocorroId,
-                hospitalDestino = rv.hospitalDestino,
-                transportadoPor = rv.transportadoPor,
-                sinaisVitais = SinaisVitais(rv.pulso, rv.pressaoArterial, rv.saturacaoO2, rv.temperatura, rv.escalaGCS, rv.observacoesMedicas)
+                hospitalDestino = rv.hospitalDestino ?: "",
+                nomeMedico = parsedNomeMedico,
+                crmMedico = parsedCrmMedico,
+                sinaisVitais = SinaisVitais(
+                    pulso = rv.pulso,
+                    pressaoArterial = rv.pressaoArterial ?: "",
+                    saturacaoO2 = rv.saturacaoO2,
+                    escalaGCS = rv.escalaGCS,
+                    aberturaOcular = rv.gcsAberturaOcular,
+                    respostaVerbal = rv.gcsRespostaVerbal,
+                    respostaMotora = rv.gcsRespostaMotora,
+                    respiracao = rv.respiracao,
+                    temperatura = rv.temperatura,
+                    observacoesMedicas = rv.observacoesMedicas
+                ),
+                lesoesAparentes = rv.lesoesAparentes,
+                transportadoPor = rv.transportadoPor
             )
         }
 
         val viaturasList = roomViaturas.map { rv ->
             val roomMilitares = ocorrenciaDao.getMilitaresForViatura(rv.id)
             val equipeList = roomMilitares.map { rm ->
-                Militar(rm.id, rv.id, rm.militarMasterId, rm.re, rm.nomeGuerra, GraduacaoMilitar.fromDescricao(rm.graduacao), rm.funcao)
+                Militar(
+                    id = rm.id,
+                    viaturaId = rv.id,
+                    militarMasterId = rm.militarMasterId,
+                    re = rm.re,
+                    nomeGuerra = rm.nomeGuerra,
+                    graduacao = rm.graduacao,
+                    funcao = rm.funcao ?: ""
+                )
             }
             Viatura(
                 id = rv.id,
@@ -149,7 +202,7 @@ class RoomOcorrenciaRepository @Inject constructor(
                 viaturaMasterId = rv.viaturaMasterId,
                 prefixo = rv.prefixo,
                 tipo = rv.tipo,
-                unidade = rv.unidade,
+                unidade = rv.unidade ?: "",
                 kmSaida = rv.kmSaida,
                 kmLocal = rv.kmLocal,
                 kmRetorno = rv.kmRetorno,
@@ -157,7 +210,7 @@ class RoomOcorrenciaRepository @Inject constructor(
                 horaSaida = rv.horaSaida,
                 horaChegada = rv.horaChegada,
                 horaRetorno = rv.horaRetorno,
-                observacoes = rv.observacoes,
+                observacoes = rv.observacoes ?: "",
                 equipe = equipeList
             )
         }
@@ -165,10 +218,21 @@ class RoomOcorrenciaRepository @Inject constructor(
         val apoiosList = roomApoios.mapNotNull { ra ->
             val orgao = ocorrenciaDao.getOrgaoApoioById(ra.orgaoId)
             orgao?.let {
+                val rawV = ra.viatura ?: ""
+                val (pDesc, pViat) = if (rawV.startsWith("OUTROS:")) {
+                    rawV.substringAfter("OUTROS:").substringBefore(" - ") to rawV.substringAfter(" - ")
+                } else {
+                    "" to rawV
+                }
                 ApoioOcorrencia(
-                    orgao = OrgaoApoio(it.id, it.nome, it.sigla),
-                    viatura = ra.viatura,
-                    encarregado = ra.encarregado
+                    id = ra.id,
+                    ocorrenciaId = id,
+                    orgaoId = ra.orgaoId,
+                    orgaoSigla = it.sigla,
+                    orgaoNome = it.nome,
+                    viatura = pViat,
+                    encarregado = ra.encarregado ?: "",
+                    descricaoOutros = pDesc
                 )
             }
         }
@@ -207,48 +271,124 @@ class RoomOcorrenciaRepository @Inject constructor(
                 val roomVitimas = ocorrenciaDao.getVitimasForOcorrencia(id)
                 val roomViaturas = ocorrenciaDao.getViaturasForOcorrencia(id)
                 val roomApoios = ocorrenciaDao.getApoioForOcorrencia(id)
-
                 val veiculosList = roomVeiculos.map { rv ->
                     val ocrMap = try { json.decodeFromString<Map<String, String>>(rv.ocrDadosEstruturados) } catch (e: Exception) { emptyMap() }
                     VeiculoEnvolvido(
-                        id = rv.id, ocorrenciaId = id, veiculoMasterId = rv.veiculoMasterId, condutorId = rv.condutorId,
-                        placa = rv.placa, cor = rv.cor, chassi = rv.chassi, modelo = rv.modelo, ano = rv.ano, renavam = rv.renavam,
-                        monobloco = rv.monobloco, especie = rv.especie, tipoVeiculo = rv.tipoVeiculo, carroceria = rv.carroceria,
-                        marca = rv.marca, versao = rv.versao, anoFabricacao = rv.anoFabricacao, anoModelo = rv.anoModelo,
-                        categoriaVeiculo = rv.categoriaVeiculo, exercicio = rv.exercicio, urlCrlv = rv.urlCrlv, ocrTextoCrlv = rv.ocrTextoCrlv,
-                        ocrDadosEstruturados = ocrMap, dadosMotorista = Motorista(rv.condutorNome, rv.condutorCnh, rv.condutorCategoriaCnh, rv.condutorDataNascimento, rv.condutorTelefone)
+                        id = rv.id,
+                        ocorrenciaId = id,
+                        veiculoMasterId = rv.veiculoMasterId,
+                        condutorId = rv.condutorId,
+                        placa = rv.placa ?: "",
+                        cor = rv.cor ?: "",
+                        chassi = rv.chassi ?: "",
+                        modelo = rv.modelo ?: "",
+                        ano = if (rv.anoFabricacao != null && rv.anoModelo != null) "${rv.anoFabricacao}/${rv.anoModelo}" else rv.ano?.toString() ?: "",
+                        renavam = rv.renavam,
+                        monobloco = rv.monobloco,
+                        especie = rv.especie,
+                        tipoVeiculo = rv.tipoVeiculo,
+                        carroceria = rv.carroceria,
+                        marca = rv.marca ?: "",
+                        versao = rv.versao ?: "",
+                        anoFabricacao = rv.anoFabricacao,
+                        anoModelo = rv.anoModelo,
+                        categoriaVeiculo = rv.categoriaVeiculo,
+                        exercicio = rv.exercicio ?: "",
+                        urlCrlv = rv.urlCrlv,
+                        ocrTextoCrlv = rv.ocrTextoCrlv,
+                        ocrDadosEstruturados = ocrMap,
+                        dadosMotorista = Motorista(rv.condutorNome, rv.condutorCnh, rv.condutorCategoriaCnh, rv.condutorDataNascimento, rv.condutorTelefone)
                     )
                 }
 
                 val vitimasList = roomVitimas.map { rv ->
+                    val parsedNomeMedico = if (rv.observacoesMedicas?.startsWith("Médico: ") == true) {
+                        rv.observacoesMedicas.substringAfter("Médico: ").substringBefore(" | CRM: ")
+                    } else {
+                        ""
+                    }
+                    val parsedCrmMedico = if (rv.observacoesMedicas?.contains(" | CRM: ") == true) {
+                        rv.observacoesMedicas.substringAfter(" | CRM: ")
+                    } else {
+                        ""
+                    }
                     Vitima(
-                        id = rv.id, ocorrenciaId = id, nome = rv.nome, idade = rv.idade, lesoesAparentes = rv.lesoesAparentes,
-                        destinoSocorro = rv.destinoSocorro, quemSocorreu = rv.quemSocorreu, resultadoOcorrencia = rv.resultadoOcorrencia,
-                        pessoaId = rv.pessoaId, viaturaSocorroId = rv.viaturaSocorroId, hospitalDestino = rv.hospitalDestino,
-                        transportadoPor = rv.transportadoPor, sinaisVitais = SinaisVitais(rv.pulso, rv.pressaoArterial, rv.saturacaoO2, rv.temperatura, rv.escalaGCS, rv.observacoesMedicas)
+                        id = rv.id,
+                        ocorrenciaId = id,
+                        nome = rv.nome ?: "",
+                        idade = rv.idade,
+                        pessoaId = rv.pessoaId,
+                        lesoes = rv.lesoesAparentes ?: "",
+                        destinoSocorro = rv.destinoSocorro ?: "",
+                        quemSocorreu = rv.quemSocorreu ?: "",
+                        resultadoOcorrencia = rv.resultadoOcorrencia ?: "",
+                        viaturaSocorroId = rv.viaturaSocorroId,
+                        hospitalDestino = rv.hospitalDestino ?: "",
+                        nomeMedico = parsedNomeMedico,
+                        crmMedico = parsedCrmMedico,
+                        sinaisVitais = SinaisVitais(
+                            pulso = rv.pulso,
+                            pressaoArterial = rv.pressaoArterial ?: "",
+                            saturacaoO2 = rv.saturacaoO2,
+                            escalaGCS = rv.escalaGCS,
+                            temperatura = rv.temperatura,
+                            observacoesMedicas = rv.observacoesMedicas
+                        ),
+                        lesoesAparentes = rv.lesoesAparentes,
+                        transportadoPor = rv.transportadoPor
                     )
                 }
 
                 val viaturasList = roomViaturas.map { rv ->
                     val roomMilitares = ocorrenciaDao.getMilitaresForViatura(rv.id)
                     val equipeList = roomMilitares.map { rm ->
-                        Militar(rm.id, rv.id, rm.militarMasterId, rm.re, rm.nomeGuerra, GraduacaoMilitar.fromDescricao(rm.graduacao), rm.funcao)
+                        Militar(
+                            id = rm.id,
+                            viaturaId = rv.id,
+                            militarMasterId = rm.militarMasterId,
+                            re = rm.re,
+                            nomeGuerra = rm.nomeGuerra,
+                            graduacao = rm.graduacao,
+                            funcao = rm.funcao ?: ""
+                        )
                     }
                     Viatura(
-                        id = rv.id, ocorrenciaId = id, viaturaMasterId = rv.viaturaMasterId, prefixo = rv.prefixo, tipo = rv.tipo,
-                        unidade = rv.unidade, kmSaida = rv.kmSaida, kmLocal = rv.kmLocal, kmRetorno = rv.kmRetorno,
-                        horaDespacho = rv.horaDespacho, horaSaida = rv.horaSaida, horaChegada = rv.horaChegada, horaRetorno = rv.horaRetorno,
-                        observacoes = rv.observacoes, equipe = equipeList
+                        id = rv.id,
+                        ocorrenciaId = id,
+                        viaturaMasterId = rv.viaturaMasterId,
+                        prefixo = rv.prefixo,
+                        tipo = rv.tipo,
+                        unidade = rv.unidade ?: "",
+                        kmSaida = rv.kmSaida,
+                        kmLocal = rv.kmLocal,
+                        kmRetorno = rv.kmRetorno,
+                        horaDespacho = rv.horaDespacho,
+                        horaSaida = rv.horaSaida,
+                        horaChegada = rv.horaChegada,
+                        horaRetorno = rv.horaRetorno,
+                        observacoes = rv.observacoes ?: "",
+                        equipe = equipeList
                     )
                 }
 
                 val apoiosList = roomApoios.mapNotNull { ra ->
                     val orgao = ocorrenciaDao.getOrgaoApoioById(ra.orgaoId)
                     orgao?.let {
+                        val rawV = ra.viatura ?: ""
+                        val (pDesc, pViat) = if (rawV.startsWith("OUTROS:")) {
+                            rawV.substringAfter("OUTROS:").substringBefore(" - ") to rawV.substringAfter(" - ")
+                        } else {
+                            "" to rawV
+                        }
                         ApoioOcorrencia(
-                            orgao = OrgaoApoio(it.id, it.nome, it.sigla),
-                            viatura = ra.viatura,
-                            encarregado = ra.encarregado
+                            id = ra.id,
+                            ocorrenciaId = id,
+                            orgaoId = ra.orgaoId,
+                            orgaoSigla = it.sigla,
+                            orgaoNome = it.nome,
+                            viatura = pViat,
+                            encarregado = ra.encarregado ?: "",
+                            descricaoOutros = pDesc
                         )
                     }
                 }
@@ -288,7 +428,7 @@ class RoomOcorrenciaRepository @Inject constructor(
             cor = veiculo.cor,
             chassi = veiculo.chassi,
             modelo = veiculo.modelo,
-            ano = veiculo.ano,
+            ano = veiculo.ano.substringBefore("/").toIntOrNull(),
             renavam = veiculo.renavam,
             monobloco = veiculo.monobloco,
             especie = veiculo.especie,
@@ -315,12 +455,17 @@ class RoomOcorrenciaRepository @Inject constructor(
 
     override suspend fun addVitima(vitima: Vitima): Result<Vitima> = runCatching {
         val id = vitima.id ?: UUID.randomUUID().toString()
+        // Serialize structured lesions to JSON
+        val lesoesJsonStr = if (vitima.lesoesEstruturadas.isNotEmpty()) {
+            vitima.lesoesEstruturadas.joinToString("|") { "${it.regiao.name}:${it.tipo.name}" }
+        } else null
         val roomVitima = RoomVitima(
             id = id,
             ocorrenciaId = vitima.ocorrenciaId,
             nome = vitima.nome,
             idade = vitima.idade,
-            lesoesAparentes = vitima.lesoesAparentes,
+            lesoesAparentes = vitima.lesoesAparentes ?: vitima.lesoes.ifBlank { null },
+            lesoesJson = lesoesJsonStr,
             destinoSocorro = vitima.destinoSocorro,
             quemSocorreu = vitima.quemSocorreu,
             resultadoOcorrencia = vitima.resultadoOcorrencia,
@@ -333,6 +478,10 @@ class RoomOcorrenciaRepository @Inject constructor(
             saturacaoO2 = vitima.sinaisVitais.saturacaoO2,
             temperatura = vitima.sinaisVitais.temperatura,
             escalaGCS = vitima.sinaisVitais.escalaGCS,
+            gcsAberturaOcular = vitima.sinaisVitais.aberturaOcular,
+            gcsRespostaVerbal = vitima.sinaisVitais.respostaVerbal,
+            gcsRespostaMotora = vitima.sinaisVitais.respostaMotora,
+            respiracao = vitima.sinaisVitais.respiracao,
             observacoesMedicas = vitima.sinaisVitais.observacoesMedicas
         )
         ocorrenciaDao.insertVitima(roomVitima)
@@ -341,6 +490,11 @@ class RoomOcorrenciaRepository @Inject constructor(
 
     override suspend fun getOrgaosApoio(): Result<List<OrgaoApoio>> = runCatching {
         ocorrenciaDao.getOrgaosApoio().map { OrgaoApoio(it.id, it.nome, it.sigla) }
+    }
+
+    override suspend fun addOrgaoApoio(orgao: OrgaoApoio): Result<OrgaoApoio> = runCatching {
+        ocorrenciaDao.insertOrgaoApoio(RoomOrgaoApoio(orgao.id, orgao.nome, orgao.sigla))
+        orgao
     }
 
     override suspend fun vincularOrgaoApoio(ocorrenciaId: String, orgaoId: String): Result<Unit> = runCatching {
@@ -400,7 +554,7 @@ class RoomOcorrenciaRepository @Inject constructor(
 
     override suspend fun salvarPessoaEDocumento(pessoa: Pessoa, documento: Documento): Result<String> = runCatching {
         val finalPessoaId = pessoa.id ?: UUID.randomUUID().toString()
-        val cleanCpf = if (pessoa.cpf.isNullOrBlank()) null else pessoa.cpf.replace(Regex("[.-]"), "")
+        val cleanCpf = if (pessoa.cpf.isNullOrBlank()) null else pessoa.cpf.trim()
         val cleanRg = if (pessoa.rg.isNullOrBlank()) null else pessoa.rg.replace(Regex("[.-]"), "")
         val cleanNomeSocial = if (pessoa.nomeSocial.isNullOrBlank()) null else pessoa.nomeSocial
 
@@ -418,7 +572,7 @@ class RoomOcorrenciaRepository @Inject constructor(
             filiacao = pessoa.filiacao,
             sexo = pessoa.sexo,
             telefone = pessoa.telefone,
-            email = java.lang.String.valueOf(pessoa.email ?: ""), // Safe cast or keep null
+            email = pessoa.email,
             logradouro = pessoa.logradouro,
             numero = pessoa.numero,
             bairro = pessoa.bairro,
@@ -487,10 +641,16 @@ class RoomOcorrenciaRepository @Inject constructor(
         ocorrenciaId: String,
         orgaoId: String,
         viatura: String?,
-        encarregado: String?
+        encarregado: String?,
+        descricaoOutros: String?
     ): Result<Unit> = runCatching {
         val id = UUID.randomUUID().toString()
-        ocorrenciaDao.insertApoioOcorrencia(RoomApoioOcorrencia(id, ocorrenciaId, orgaoId, viatura, encarregado))
+        val viaturaFinal = if (orgaoId == "OUTROS" && !descricaoOutros.isNullOrBlank()) {
+            "OUTROS:$descricaoOutros"
+        } else {
+            viatura
+        }
+        ocorrenciaDao.insertApoioOcorrencia(RoomApoioOcorrencia(id, ocorrenciaId, orgaoId, viaturaFinal, encarregado))
     }
 
     // --- V3 Viaturas & Militares ---
@@ -551,8 +711,9 @@ class RoomOcorrenciaRepository @Inject constructor(
             val roomMilitares = militares.map { militar ->
                 val militarId = if (militar.id.isNullOrBlank()) UUID.randomUUID().toString() else militar.id
                 RoomMilitarViatura(
-                    id = militarId, viaturaId = viaturaId, militarMasterId = militar.militarMasterId,
-                    re = militar.re, nomeGuerra = militar.nomeGuerra, graduacao = militar.graduacao.descricao,
+                    id = militarId, viaturaId = viaturaId, 
+                    militarMasterId = if (militar.militarMasterId.isNullOrBlank()) null else militar.militarMasterId,
+                    re = militar.re, nomeGuerra = militar.nomeGuerra, graduacao = militar.graduacao,
                     funcao = militar.funcao
                 )
             }
@@ -566,8 +727,8 @@ class RoomOcorrenciaRepository @Inject constructor(
                     militarMasterId = rm.militarMasterId,
                     re = rm.re,
                     nomeGuerra = rm.nomeGuerra,
-                    graduacao = GraduacaoMilitar.fromDescricao(rm.graduacao),
-                    funcao = rm.funcao
+                    graduacao = rm.graduacao,
+                    funcao = rm.funcao ?: ""
                 )
             }
             
@@ -605,8 +766,9 @@ class RoomOcorrenciaRepository @Inject constructor(
             android.util.Log.d("FireRoom", "📦 Salvando militar: ID=$militarId, Viatura=${militar.viaturaId}")
             
             val roomMilitar = RoomMilitarViatura(
-                id = militarId, viaturaId = militar.viaturaId, militarMasterId = militar.militarMasterId,
-                re = militar.re, nomeGuerra = militar.nomeGuerra, graduacao = militar.graduacao.descricao,
+                id = militarId, viaturaId = militar.viaturaId, 
+                militarMasterId = if (militar.militarMasterId.isNullOrBlank()) null else militar.militarMasterId,
+                re = militar.re, nomeGuerra = militar.nomeGuerra, graduacao = militar.graduacao,
                 funcao = militar.funcao
             )
             ocorrenciaDao.insertMilitarViatura(roomMilitar)
@@ -635,14 +797,22 @@ class RoomOcorrenciaRepository @Inject constructor(
         ocorrenciaDao.getViaturasForOcorrencia(ocorrenciaId).map { rv ->
             val roomMilitares = ocorrenciaDao.getMilitaresForViatura(rv.id)
             val equipeList = roomMilitares.map { rm ->
-                Militar(rm.id, rv.id, rm.militarMasterId, rm.re, rm.nomeGuerra, GraduacaoMilitar.fromDescricao(rm.graduacao), rm.funcao)
+                Militar(
+                    id = rm.id,
+                    viaturaId = rv.id,
+                    militarMasterId = rm.militarMasterId,
+                    re = rm.re,
+                    nomeGuerra = rm.nomeGuerra,
+                    graduacao = rm.graduacao,
+                    funcao = rm.funcao ?: ""
+                )
             }
             Viatura(
                 id = rv.id, ocorrenciaId = ocorrenciaId, viaturaMasterId = rv.viaturaMasterId,
-                prefixo = rv.prefixo, tipo = rv.tipo, unidade = rv.unidade,
+                prefixo = rv.prefixo, tipo = rv.tipo, unidade = rv.unidade ?: "",
                 kmSaida = rv.kmSaida, kmLocal = rv.kmLocal, kmRetorno = rv.kmRetorno,
                 horaDespacho = rv.horaDespacho, horaSaida = rv.horaSaida,
-                horaChegada = rv.horaChegada, horaRetorno = rv.horaRetorno, observacoes = rv.observacoes,
+                horaChegada = rv.horaChegada, horaRetorno = rv.horaRetorno, observacoes = rv.observacoes ?: "",
                 equipe = equipeList
             )
         }

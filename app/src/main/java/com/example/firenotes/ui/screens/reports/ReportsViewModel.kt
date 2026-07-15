@@ -177,7 +177,7 @@ class ReportsViewModel @Inject constructor(
                     occurrence.viaturas.forEach { v ->
                         drawTextLine("Viatura: ${v.prefixo} (${v.tipo}) - Unidade: ${v.unidade ?: "N/D"}", 70f, 11f, false)
                         v.equipe.forEach { m ->
-                            drawTextLine("  • RE: ${m.re} - ${m.nomeGuerra} (${m.graduacao.descricao})", 90f, 10f, false)
+                            drawTextLine("  • RE: ${m.re} - ${m.nomeGuerra} (${m.graduacao})", 90f, 10f, false)
                         }
                     }
                 }

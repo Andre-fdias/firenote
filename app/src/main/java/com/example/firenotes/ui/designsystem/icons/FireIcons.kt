@@ -56,4 +56,5 @@ object FireIcons {
     val ContentCopy: ImageVector = Icons.Rounded.ContentCopy
     val Palette: ImageVector = Icons.Rounded.Palette
     val Cloud: ImageVector = Icons.Rounded.Cloud
+    val Mic: ImageVector = Icons.Rounded.Mic
 }

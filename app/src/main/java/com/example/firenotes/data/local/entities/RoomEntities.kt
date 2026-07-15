@@ -310,6 +310,7 @@ data class RoomVitima(
     val nome: String?,
     val idade: Int?,
     val lesoesAparentes: String?,
+    val lesoesJson: String? = null,           // JSON serialization of List<Lesao>
     val destinoSocorro: String?,
     val quemSocorreu: String?,
     val resultadoOcorrencia: String?,
@@ -322,6 +323,10 @@ data class RoomVitima(
     val saturacaoO2: Int?,
     val temperatura: Double?,
     val escalaGCS: Int?,
+    val gcsAberturaOcular: Int? = null,       // Abertura Ocular (1-4)
+    val gcsRespostaVerbal: Int? = null,       // Resposta Verbal (1-5)
+    val gcsRespostaMotora: Int? = null,       // Resposta Motora (1-6)
+    val respiracao: Int? = null,              // Movimentos respiratórios por minuto
     val observacoesMedicas: String?
 )
 
@@ -434,9 +439,13 @@ data class RoomBackupLog(
 data class RoomTarefa(
     @PrimaryKey val id: String,
     val titulo: String,
+    val descricao: String? = null,
     val concluida: Boolean,
     val data: String, // Formato YYYY-MM-DD
-    val categoria: String
+    val categoria: String,
+    val prioridade: String = "MEDIA", // Valores: ALTA, MEDIA, BAIXA
+    val criadoEm: Long = System.currentTimeMillis(),
+    val concluidoEm: Long? = null
 )
 
 @Entity(tableName = "eventos_agenda")
@@ -446,7 +455,8 @@ data class RoomEventoAgenda(
     val descricao: String?,
     val data: String, // Formato YYYY-MM-DD
     val horaInicio: String?, // Formato HH:MM
-    val horaFim: String?
+    val horaFim: String?,
+    val tipo: String? = null // TipoEvento.name
 )
 
 @Entity(tableName = "prontidao_dias")

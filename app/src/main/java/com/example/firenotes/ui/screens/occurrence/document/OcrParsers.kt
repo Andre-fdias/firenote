@@ -65,6 +65,7 @@ object CpfParser {
             nome = map["nome"].orEmpty(),
             cpf = map["cpf"].orEmpty(),
             nascimento = map["nascimento"].orEmpty(),
+            filiacao = map["filiacao"].orEmpty(),
             situacao = map["situacao"].orEmpty(),
             dataInscricao = map["data_inscricao"] ?: map["dataInscricao"].orEmpty()
         )

@@ -2,20 +2,20 @@ package com.example.firenotes.ui.screens.security
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,7 +28,7 @@ import kotlinx.coroutines.delay
 
 private const val LOG_TAG = "FireSecurity"
 private fun logD(message: String) = android.util.Log.d(LOG_TAG, message)
-private fun logE(message: String, throwable: Throwable? = null) = 
+private fun logE(message: String, throwable: Throwable? = null) =
     android.util.Log.e(LOG_TAG, message, throwable)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,11 +45,14 @@ fun PinLockScreen(
     var attempts by remember { mutableStateOf(0) }
     var isLocked by remember { mutableStateOf(false) }
     var lockTimer by remember { mutableStateOf(0) }
-    
+
     // Animação de erro (shake)
     val shakeAnim by animateFloatAsState(
-        targetValue = if (showError) 10f else 0f,
-        animationSpec = tween(200),
+        targetValue = if (showError) 12f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioHighBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
         label = "shake"
     )
 
@@ -63,6 +66,7 @@ fun PinLockScreen(
             }
             isLocked = false
             attempts = 0
+            enteredPin = ""
         }
     }
 
@@ -74,13 +78,11 @@ fun PinLockScreen(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.MediumLarge),
+            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
             modifier = Modifier
+                .fillMaxWidth()
                 .padding(FireSpacing.Large)
                 .offset(x = shakeAnim.dp)
-                .background(FireColors.Surface, CircleShape)
-                .padding(32.dp)
-                .clip(CircleShape)
         ) {
             // Ícone animado trancado/destrancado
             AnimatedContent(
@@ -90,55 +92,63 @@ fun PinLockScreen(
                 },
                 label = "lock_icon"
             ) { icon ->
-                Text(
-                    text = icon,
-                    fontSize = 56.sp,
+                Box(
                     modifier = Modifier
+                        .size(100.dp)
                         .background(
                             if (showError || isLocked) FireColors.Error.copy(alpha = 0.1f) else FireColors.Primary.copy(alpha = 0.1f),
                             CircleShape
-                        )
-                        .padding(16.dp)
-                )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = icon,
+                        fontSize = 48.sp
+                    )
+                }
             }
 
             Text(
-                text = if (isLocked) "🔒 BLOQUEADO" else "Fire Notes",
+                text = if (isLocked) "🔒 DISPOSITIVO BLOQUEADO" else "FIRE NOTES SECURE",
                 style = FireTypography.Headline,
-                fontWeight = FontWeight.Bold,
-                color = if (isLocked) FireColors.Error else FireColors.OnBackground
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isLocked) FireColors.Error else FireColors.Primary,
+                fontSize = 20.sp,
+                letterSpacing = 0.5.sp
             )
 
             if (isLocked) {
                 Text(
-                    text = "Tente novamente em ${lockTimer}s",
+                    text = "Acesso temporariamente suspenso.\nTente novamente em ${lockTimer}s",
                     style = FireTypography.Body,
                     color = FireColors.Error,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
                 )
             } else {
                 Text(
-                    text = "Insira seu PIN de 4 dígitos",
-                    style = FireTypography.Body,
-                    color = FireColors.OnSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    text = "Digite seu PIN de segurança de 4 dígitos para acessar o boletim operacional.",
+                    style = FireTypography.BodySmall,
+                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = FireSpacing.Medium)
                 )
             }
 
             // Indicador visual de progresso dos dígitos (4 pontos)
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(vertical = 8.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(vertical = FireSpacing.Medium)
             ) {
                 repeat(4) { index ->
                     Box(
                         modifier = Modifier
-                            .size(16.dp)
+                            .size(18.dp)
                             .background(
                                 color = if (index < enteredPin.length) {
-                                    FireColors.Primary
+                                    if (showError) FireColors.Error else FireColors.Primary
                                 } else {
-                                    FireColors.OnSurfaceVariant.copy(alpha = 0.3f)
+                                    FireColors.OnSurfaceVariant.copy(alpha = 0.2f)
                                 },
                                 shape = CircleShape
                             )
@@ -146,82 +156,88 @@ fun PinLockScreen(
                 }
             }
 
-            // Campo de entrada do teclado numérico
-            OutlinedTextField(
-                value = enteredPin,
-                onValueChange = { 
-                    if (!isLocked && it.length <= 4) {
-                        enteredPin = it
-                        showError = false
-                        
-                        if (it.length == 4) {
-                            if (it == correctPin) {
-                                logD("PIN correto. Acesso liberado.")
-                                onUnlocked()
-                            } else {
-                                logD("PIN incorreto.")
-                                showError = true
-                                errorMessage = "PIN incorreto. Tentativas: ${attempts + 1}/$maxAttempts"
-                                attempts++
-                                enteredPin = ""
-                                
-                                if (attempts >= maxAttempts) {
-                                    isLocked = true
-                                    logE("PIN incorreto $maxAttempts vezes. Bloqueio ativado.")
-                                }
-                            }
+            // Numerical tactile keyboard layout (No text input to avoid keyboard overlap)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(FireSpacing.Small),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = FireSpacing.Small)
+            ) {
+                val keys = listOf(
+                    listOf("1", "2", "3"),
+                    listOf("4", "5", "6"),
+                    listOf("7", "8", "9"),
+                    listOf("C", "0", "⌫")
+                )
+
+                keys.forEach { row ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                        modifier = Modifier.fillMaxWidth(0.85f)
+                    ) {
+                        row.forEach { key ->
+                            KeypadButton(
+                                text = key,
+                                enabled = !isLocked,
+                                onClick = {
+                                    if (key == "⌫") {
+                                        if (enteredPin.isNotEmpty()) enteredPin = enteredPin.dropLast(1)
+                                    } else if (key == "C") {
+                                        enteredPin = ""
+                                    } else {
+                                        if (enteredPin.length < 4) {
+                                            enteredPin += key
+                                            if (enteredPin.length == 4) {
+                                                if (enteredPin == correctPin) {
+                                                    logD("PIN correto. Acesso liberado.")
+                                                    onUnlocked()
+                                                } else {
+                                                    logD("PIN incorreto.")
+                                                    showError = true
+                                                    attempts++
+                                                    errorMessage = "PIN incorreto. Tentativa $attempts de $maxAttempts."
+                                                    enteredPin = ""
+                                                    if (attempts >= maxAttempts) {
+                                                        isLocked = true
+                                                        logE("PIN incorreto $maxAttempts vezes. Bloqueio temporário ativado.")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
-                },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier
-                    .width(180.dp)
-                    .background(Color.Transparent),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = if (showError) FireColors.Error else FireColors.Primary,
-                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.3f),
-                    cursorColor = if (showError) FireColors.Error else FireColors.Primary
-                ),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
-
-            // Mensagem de erro com animação
-            AnimatedVisibility(
-                visible = showError,
-                enter = fadeIn() + slideInVertically(),
-                exit = fadeOut()
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "⚠️ $errorMessage",
-                        style = FireTypography.Label,
-                        color = FireColors.Error,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        text = "Tentativas restantes: ${maxAttempts - attempts}",
-                        style = FireTypography.Caption,
-                        color = FireColors.OnSurfaceVariant
-                    )
                 }
             }
 
-            // Badge indicador de segurança
+            // Mensagem de erro com animação
+            AnimatedVisibility(
+                visible = showError && !isLocked,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut()
+            ) {
+                Text(
+                    text = "⚠️ $errorMessage",
+                    style = FireTypography.LabelSmall,
+                    color = FireColors.Error,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            // Badge de Segurança Ativa
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = FireColors.Success.copy(alpha = 0.1f),
-                modifier = Modifier.padding(top = 8.dp)
+                border = BorderStroke(1.dp, FireColors.Success.copy(alpha = 0.2f)),
+                modifier = Modifier.padding(top = FireSpacing.Small)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -229,13 +245,43 @@ fun PinLockScreen(
                             .background(FireColors.Success, CircleShape)
                     )
                     Text(
-                        text = "Seguro",
-                        fontSize = 11.sp,
+                        text = "CRIPTOGRAFIA DE ARQUIVOS ATIVA",
+                        fontSize = 9.sp,
                         color = FireColors.Success,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun KeypadButton(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isAction = text == "⌫" || text == "C"
+    val containerBg = if (isAction) FireColors.Secondary.copy(alpha = 0.1f) else FireColors.SurfaceVariant.copy(alpha = 0.4f)
+    val textCol = if (isAction) FireColors.Secondary else FireColors.OnSurface
+
+    Box(
+        modifier = modifier
+            .height(56.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (enabled) containerBg else containerBg.copy(alpha = 0.5f))
+            .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = if (isAction) 16.sp else 22.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = if (enabled) textCol else textCol.copy(alpha = 0.5f),
+            fontFamily = FontFamily.Monospace
+        )
     }
 }

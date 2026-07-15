@@ -3,6 +3,7 @@ package com.example.firenotes.domain.model
 import java.time.Instant
 
 enum class NaturezaOcorrencia(val descricao: String) {
+    INDEFINIDA("Indefinida"),
     INCENDIO("Incêndio"),
     SALVAMENTO("Salvamento"),
     ACIDENTE_TRANSITO("Acidente de Trânsito"),
@@ -39,7 +40,15 @@ data class Ocorrencia(
 )
 
 data class ApoioOcorrencia(
-    val orgao: OrgaoApoio,
-    val viatura: String?,
-    val encarregado: String?
+    val id: String = "",
+    val ocorrenciaId: String = "",
+    val orgaoId: String = "",
+    val orgaoSigla: String = "",               // PRF, PM, SAMU, GCM, CETESB, DER, DERSA, OUTROS
+    val orgaoNome: String = "",
+    val viatura: String = "",
+    val encarregado: String = "",
+    val descricaoOutros: String = "",          // Para opção "OUTROS"
+    
+    // Kept for database compatibility in repository mapping
+    val orgao: OrgaoApoio = OrgaoApoio(orgaoId, orgaoNome, orgaoSigla)
 )

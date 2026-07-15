@@ -1,28 +1,81 @@
 package com.example.firenotes.domain.model
 
+// ============================================
+// LESÕES CORPORAIS ESTRUTURADAS
+// ============================================
+
+/** Região do corpo afetada */
+enum class RegiaoCorporal(val label: String, val emoji: String) {
+    CABECA_FRENTE("Cabeça (Frente)", "🧠"),
+    CABECA_DORSO("Cabeça (Dorso)", "🧠"),
+    TORAX_FRENTE("Tórax (Frente)", "🫁"),
+    TORAX_DORSO("Tórax (Dorso)", "🫁"),
+    ABDOME_FRENTE("Abdome (Frente)", "🫃"),
+    ABDOME_DORSO("Abdome (Dorso)", "🫃"),
+    MEMBRO_SUP_DIREITO("M.S. Direito", "💪"),
+    MEMBRO_SUP_ESQUERDO("M.S. Esquerdo", "💪"),
+    MEMBRO_INF_DIREITO("M.I. Direito", "🦵"),
+    MEMBRO_INF_ESQUERDO("M.I. Esquerdo", "🦵"),
+}
+
+/** Tipo/mecanismo do ferimento */
+enum class TipoFerimento(val label: String) {
+    PERFURANTE("Perfurante"),
+    CORTANTE("Cortante"),
+    CONTUNDENTE("Contundente"),
+    PERFURO_CORTANTE("Perfuro-cortante"),
+    PERFURO_CONTUNDENTE("Perfuro-contundente"),
+    CORTO_CONTUNDENTE("Corto-contundente"),
+    QUEIMADURA("Queimadura"),
+}
+
+/** Lesão vinculada a uma região e tipo */
+data class Lesao(
+    val regiao: RegiaoCorporal,
+    val tipo: TipoFerimento,
+)
+
+// ============================================
+// SINAIS VITAIS
+// ============================================
+
+data class SinaisVitais(
+    val pulso: Int? = null,                    // FC em BPM (3-300)
+    val pressaoArterial: String = "",          // "120x80"
+    val saturacaoO2: Int? = null,              // 0-100
+    val escalaGCS: Int? = null,                // 3-15 (total AO + RV + RM)
+    val aberturaOcular: Int? = null,           // 1-4
+    val respostaVerbal: Int? = null,           // 1-5
+    val respostaMotora: Int? = null,           // 1-6
+    val respiracao: Int? = null,               // Movimentos respiratórios por minuto (0-60)
+
+    // Database compatibility fields
+    val temperatura: Double? = null,
+    val observacoesMedicas: String? = null
+)
+
+// ============================================
+// VÍTIMA
+// ============================================
+
 data class Vitima(
     val id: String? = null,
     val ocorrenciaId: String,
-    val nome: String?,
-    val idade: Int?,
-    val lesoesAparentes: String?,
-    val destinoSocorro: String? = null,
-    val quemSocorreu: String? = null,
-    val resultadoOcorrencia: String? = null,
+    val nome: String = "",
+    val idade: Int? = null,                    // Calculado automaticamente
+    val pessoaId: String? = null,              // Vinculado à Pessoa
+    val lesoes: String = "",                   // Breve histórico das lesões (texto livre)
+    val lesoesEstruturadas: List<Lesao> = emptyList(), // Lesões do infográfico corporal
+    val destinoSocorro: String = "",           // Texto livre (mantido para compatibilidade)
+    val quemSocorreu: String = "",             // Select: SAMU, Corpo de Bombeiros, Concessionária, Ambulância, PM, GCM, Outros
+    val resultadoOcorrencia: String = "",      // Select: Atendida, Cancelado, Recusa
+    val viaturaSocorroId: String? = null,      // Referência à Viatura
+    val hospitalDestino: String = "",
+    val nomeMedico: String = "",
+    val crmMedico: String = "",
     val sinaisVitais: SinaisVitais = SinaisVitais(),
-    val pessoaId: String? = null,
-    
-    // V3 Socorro fields
-    val viaturaSocorroId: String? = null,
-    val hospitalDestino: String? = null,
-    val transportadoPor: String? = null // "Viatura" or "Outro órgão"
-)
 
-data class SinaisVitais(
-    val pulso: Int? = null,                // E.g., BPM (batimentos por minuto)
-    val pressaoArterial: String? = null,  // E.g., "12/8" ou "120/80" mmHg
-    val saturacaoO2: Int? = null,         // E.g., 98%
-    val temperatura: Double? = null,      // E.g., 36.5°C
-    val escalaGCS: Int? = null,           // Glasgow Coma Scale (3 a 15)
-    val observacoesMedicas: String? = null
+    // Database compatibility fields
+    val lesoesAparentes: String? = null,
+    val transportadoPor: String? = null        // "Viatura" or "Outro órgão"
 )

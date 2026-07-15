@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -17,6 +18,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
@@ -38,6 +40,9 @@ import com.example.firenotes.ui.screens.reports.ReportsViewModel
 import com.example.firenotes.ui.designsystem.theme.FireNotesTheme
 import com.example.firenotes.ui.designsystem.components.navigation.FireBottomNavigation
 import com.example.firenotes.ui.designsystem.icons.FireIcons
+import com.example.firenotes.ui.screens.agenda.AgendaScreen
+import com.example.firenotes.ui.screens.consult.OccurrenceDetailsScreen
+import com.example.firenotes.ui.screens.consult.OccurrenceDetailsViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -52,7 +57,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        com.example.firenotes.util.LogHelper.init(applicationContext)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(
+                lightScrim = android.graphics.Color.TRANSPARENT,
+                darkScrim = android.graphics.Color.TRANSPARENT
+            ),
+            navigationBarStyle = SystemBarStyle.auto(
+                lightScrim = android.graphics.Color.TRANSPARENT,
+                darkScrim = android.graphics.Color.TRANSPARENT
+            )
+        )
         setContent {
             val theme by settingsRepository.themeFlow.collectAsState(initial = "Automático")
             val isDarkTheme = when (theme) {
@@ -63,7 +78,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
             FireNotesTheme(darkTheme = isDarkTheme) {
                 val showSplash = remember { mutableStateOf(true) }
-                val isUnlocked = remember { mutableStateOf(false) }
+                val isUnlocked = rememberSaveable { mutableStateOf(false) }
                 val pinEnabled by settingsRepository.pinEnabledFlow.collectAsState(initial = false)
                 val correctPin by settingsRepository.pinCodeFlow.collectAsState(initial = "")
                 val biometricEnabled by settingsRepository.biometricEnabledFlow.collectAsState(initial = false)
@@ -90,15 +105,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
 
-                    val showBottomBar = currentRoute in listOf(
-                        Screen.Home.route,
-                        Screen.Consult.route,
-                        Screen.Dashboard.route,
-                        Screen.Settings.route,
-                        Screen.OccurrenceWizard.route,
-                        Screen.OccurrenceDetails.route,
-                        Screen.Reports.route
-                    )
+                    val showBottomBar = currentRoute != null
 
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
@@ -110,14 +117,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         label = { Text("Home") },
                                         selected = currentRoute == Screen.Home.route,
                                         onClick = {
-                                            android.util.Log.d("FireNavigation", "Navegando para Home a partir de: $currentRoute")
                                             navController.navigate(Screen.Home.route) {
                                                 popUpTo(navController.graph.startDestinationId) {
-                                                    inclusive = false
-                                                    saveState = true
+                                                    inclusive = true
                                                 }
                                                 launchSingleTop = true
-                                                restoreState = true
                                             }
                                         }
                                     )
@@ -183,6 +187,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     },
                                     onNavigateToDetails = { id ->
                                         navController.navigate(Screen.OccurrenceDetails.createRoute(id))
+                                    },
+                                    onNavigateToAgenda = { date ->
+                                        navController.navigate(Screen.Agenda.createRoute(date))
                                     }
                                 )
                             }
@@ -200,6 +207,21 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             }
                             composable(
                                 route = Screen.OccurrenceDetails.route,
+                                arguments = listOf(androidx.navigation.navArgument("occurrenceId") { type = androidx.navigation.NavType.StringType })
+                            ) {
+                                val detailsViewModel: OccurrenceDetailsViewModel = hiltViewModel()
+                                OccurrenceDetailsScreen(
+                                    viewModel = detailsViewModel,
+                                    onNavigateBack = {
+                                        navController.popBackStack()
+                                    },
+                                    onNavigateToEdit = { occurrenceId ->
+                                        navController.navigate(Screen.OccurrenceEdit.createRoute(occurrenceId))
+                                    }
+                                )
+                            }
+                            composable(
+                                route = Screen.OccurrenceEdit.route,
                                 arguments = listOf(androidx.navigation.navArgument("occurrenceId") { type = androidx.navigation.NavType.StringType })
                             ) { backStackEntry ->
                                 val id = backStackEntry.arguments?.getString("occurrenceId")
@@ -236,7 +258,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 com.example.firenotes.ui.screens.consult.ConsultScreen(
                                     viewModel = consultViewModel,
                                     onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToEdit = { id ->
+                                    onNavigateToDetails = { id ->
                                         navController.navigate(Screen.OccurrenceDetails.createRoute(id))
                                     }
                                 )
@@ -263,6 +285,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 val reportsViewModel: ReportsViewModel = hiltViewModel()
                                 ReportsScreen(
                                     viewModel = reportsViewModel,
+                                    onNavigateBack = { navController.popBackStack() }
+                                )
+                            }
+                            composable(
+                                route = Screen.Agenda.route,
+                                arguments = listOf(androidx.navigation.navArgument("date") { type = androidx.navigation.NavType.StringType })
+                            ) { backStackEntry ->
+                                val dateStr = backStackEntry.arguments?.getString("date") ?: java.time.LocalDate.now().toString()
+                                val date = runCatching { java.time.LocalDate.parse(dateStr) }.getOrDefault(java.time.LocalDate.now())
+                                val homeViewModel: HomeViewModel = hiltViewModel()
+                                AgendaScreen(
+                                    date = date,
+                                    viewModel = homeViewModel,
                                     onNavigateBack = { navController.popBackStack() }
                                 )
                             }

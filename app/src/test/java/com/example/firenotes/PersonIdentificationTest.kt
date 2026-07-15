@@ -169,7 +169,7 @@ class PersonIdentificationTest {
         override suspend fun getPessoasDaOcorrencia(ocorrenciaId: String): Result<List<Pessoa>> = Result.failure(Exception())
         override suspend fun getDocumentosDaOcorrencia(ocorrenciaId: String): Result<List<Documento>> = Result.failure(Exception())
         override suspend fun uploadFile(bucket: String, path: String, bytes: ByteArray): Result<String> = Result.failure(Exception())
-        override suspend fun vincularOrgaoApoioDetalhado(ocorrenciaId: String, orgaoId: String, viatura: String?, encarregado: String?): Result<Unit> = Result.failure(Exception())
+        override suspend fun vincularOrgaoApoioDetalhado(ocorrenciaId: String, orgaoId: String, viatura: String?, encarregado: String?, descricaoOutros: String?): Result<Unit> = Result.failure(Exception())
         override suspend fun addViatura(viatura: Viatura): Result<Viatura> = Result.failure(Exception())
         override suspend fun salvarViaturaComMilitares(viatura: Viatura, militares: List<Militar>): Result<Viatura> = Result.failure(Exception())
         override suspend fun deleteViatura(viaturaId: String): Result<Unit> = Result.failure(Exception())

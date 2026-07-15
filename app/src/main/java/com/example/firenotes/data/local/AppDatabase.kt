@@ -34,7 +34,7 @@ import java.util.UUID
         RoomEventoAgenda::class,
         RoomProntidaoDia::class
     ],
-    version = 2,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -82,6 +82,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tarefas` ADD COLUMN `descricao` TEXT")
+                db.execSQL("ALTER TABLE `tarefas` ADD COLUMN `prioridade` TEXT NOT NULL DEFAULT 'MEDIA'")
+                db.execSQL("ALTER TABLE `tarefas` ADD COLUMN `criadoEm` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `tarefas` ADD COLUMN `concluidoEm` INTEGER")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Novos campos na tabela vitimas
+                db.execSQL("ALTER TABLE `vitimas` ADD COLUMN `lesoesJson` TEXT")
+                db.execSQL("ALTER TABLE `vitimas` ADD COLUMN `gcsAberturaOcular` INTEGER")
+                db.execSQL("ALTER TABLE `vitimas` ADD COLUMN `gcsRespostaVerbal` INTEGER")
+                db.execSQL("ALTER TABLE `vitimas` ADD COLUMN `gcsRespostaMotora` INTEGER")
+                db.execSQL("ALTER TABLE `vitimas` ADD COLUMN `respiracao` INTEGER")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Adiciona campo tipo em eventos_agenda
+                db.execSQL("ALTER TABLE `eventos_agenda` ADD COLUMN `tipo` TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -95,7 +122,7 @@ abstract class AppDatabase : RoomDatabase() {
                         isCreatedJustNow = true
                     }
                 })
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 
                 INSTANCE = instance

@@ -135,24 +135,25 @@ fun FireDatePicker(
 ) {
     val context = LocalContext.current
     val calendar = Calendar.getInstance()
+    val currentOnDateSelected by rememberUpdatedState(onDateSelected)
 
-    val datePickerDialog = remember {
+    fun showDatePicker() {
         DatePickerDialog(
             context,
             { _, year, month, dayOfMonth ->
                 val dateString = String.format("%02d/%02d/%d", dayOfMonth, month + 1, year)
-                onDateSelected(dateString)
+                currentOnDateSelected(dateString)
             },
             calendar.get(Calendar.YEAR),
             calendar.get(Calendar.MONTH),
             calendar.get(Calendar.DAY_OF_MONTH)
-        )
+        ).show()
     }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { datePickerDialog.show() }
+            .clickable { showDatePicker() }
     ) {
         FireOutlinedTextField(
             value = value,
@@ -166,7 +167,7 @@ fun FireDatePicker(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .clickable { datePickerDialog.show() }
+                .clickable { showDatePicker() }
         )
     }
 }
@@ -180,24 +181,25 @@ fun FireTimePicker(
 ) {
     val context = LocalContext.current
     val calendar = Calendar.getInstance()
+    val currentOnTimeSelected by rememberUpdatedState(onTimeSelected)
 
-    val timePickerDialog = remember {
+    fun showTimePicker() {
         TimePickerDialog(
             context,
             { _, hourOfDay, minute ->
                 val timeString = String.format("%02d:%02d", hourOfDay, minute)
-                onTimeSelected(timeString)
+                currentOnTimeSelected(timeString)
             },
             calendar.get(Calendar.HOUR_OF_DAY),
             calendar.get(Calendar.MINUTE),
             true
-        )
+        ).show()
     }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { timePickerDialog.show() }
+            .clickable { showTimePicker() }
     ) {
         FireOutlinedTextField(
             value = value,
@@ -211,7 +213,7 @@ fun FireTimePicker(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .clickable { timePickerDialog.show() }
+                .clickable { showTimePicker() }
         )
     }
 }

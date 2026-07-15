@@ -247,7 +247,8 @@ fun ImageViewerDialog(
     imagesList: List<GalleryImage>,
     onDismiss: () -> Unit,
     onDeleteImage: (GalleryImage) -> Unit,
-    onShareImage: (GalleryImage) -> Unit
+    onShareImage: (GalleryImage) -> Unit,
+    onDownloadImage: ((GalleryImage) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -287,6 +288,11 @@ fun ImageViewerDialog(
                     },
                     actions = {
                         currentImage?.let { img ->
+                            if (onDownloadImage != null) {
+                                IconButton(onClick = { onDownloadImage(img) }) {
+                                    Icon(imageVector = FireIcons.FileDownload, contentDescription = "Baixar", tint = Color.White)
+                                }
+                            }
                             IconButton(onClick = { onShareImage(img) }) {
                                 Icon(imageVector = Icons.Default.Share, contentDescription = "Compartilhar", tint = Color.White)
                             }

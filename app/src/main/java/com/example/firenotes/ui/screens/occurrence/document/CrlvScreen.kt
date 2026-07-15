@@ -112,10 +112,11 @@ fun CrlvIdentificationScreen(
         )
 
         FireOutlinedTextField(
-            value = state.cpfProprietario,
-            onValueChange = { onStateChange(state.copy(cpfProprietario = it)) },
+            value = state.cpfProprietario.filter { it.isDigit() },
+            onValueChange = { onStateChange(state.copy(cpfProprietario = formatCpf(it))) },
             label = "CPF do Proprietário",
-            error = validationErrors.containsKey("cpfProprietario")
+            error = validationErrors.containsKey("cpfProprietario"),
+            visualTransformation = CpfVisualTransformation()
         )
     }
 }

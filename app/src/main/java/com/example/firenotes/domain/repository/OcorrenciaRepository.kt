@@ -14,6 +14,7 @@ interface OcorrenciaRepository {
     
     // Support agencies operations
     suspend fun getOrgaosApoio(): Result<List<OrgaoApoio>>
+    suspend fun addOrgaoApoio(orgao: OrgaoApoio): Result<OrgaoApoio>
     suspend fun vincularOrgaoApoio(ocorrenciaId: String, orgaoId: String): Result<Unit>
     suspend fun desvincularOrgaoApoio(ocorrenciaId: String, orgaoId: String): Result<Unit>
 
@@ -24,7 +25,7 @@ interface OcorrenciaRepository {
     suspend fun getPessoasDaOcorrencia(ocorrenciaId: String): Result<List<Pessoa>>
     suspend fun getDocumentosDaOcorrencia(ocorrenciaId: String): Result<List<Documento>>
     suspend fun uploadFile(bucket: String, path: String, bytes: ByteArray): Result<String>
-    suspend fun vincularOrgaoApoioDetalhado(ocorrenciaId: String, orgaoId: String, viatura: String?, encarregado: String?): Result<Unit>
+    suspend fun vincularOrgaoApoioDetalhado(ocorrenciaId: String, orgaoId: String, viatura: String?, encarregado: String?, descricaoOutros: String? = null): Result<Unit>
 
     // V3 Viaturas & Militares Operations
     suspend fun addViatura(viatura: Viatura): Result<Viatura>

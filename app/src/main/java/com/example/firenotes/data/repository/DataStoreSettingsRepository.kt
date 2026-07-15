@@ -22,6 +22,10 @@ class DataStoreSettingsRepository @Inject constructor(
         val KEY_LAST_CITY = stringPreferencesKey("ultima_cidade")
         val KEY_LAST_TEMP = stringPreferencesKey("ultima_temperatura")
         val KEY_LAST_UPDATE = longPreferencesKey("ultima_atualizacao")
+        
+        val KEY_LANGUAGE = stringPreferencesKey("idioma")
+        val KEY_DATE_FORMAT = stringPreferencesKey("formato_data")
+        val KEY_UNIT_SYSTEM = stringPreferencesKey("sistema_unidades")
     }
 
     override val themeFlow: Flow<String> = dataStore.data.map { preferences ->
@@ -50,6 +54,18 @@ class DataStoreSettingsRepository @Inject constructor(
 
     override val lastUpdateFlow: Flow<Long> = dataStore.data.map { preferences ->
         preferences[KEY_LAST_UPDATE] ?: 0L
+    }
+
+    override val languageFlow: Flow<String> = dataStore.data.map { preferences ->
+        preferences[KEY_LANGUAGE] ?: "Português (BR)"
+    }
+
+    override val dateFormatFlow: Flow<String> = dataStore.data.map { preferences ->
+        preferences[KEY_DATE_FORMAT] ?: "DD/MM/YYYY"
+    }
+
+    override val unitSystemFlow: Flow<String> = dataStore.data.map { preferences ->
+        preferences[KEY_UNIT_SYSTEM] ?: "Métrico"
     }
 
     override suspend fun setTheme(theme: String) {
@@ -82,6 +98,24 @@ class DataStoreSettingsRepository @Inject constructor(
             preferences[KEY_LAST_CITY] = city
             preferences[KEY_LAST_TEMP] = temp
             preferences[KEY_LAST_UPDATE] = timestamp
+        }
+    }
+
+    override suspend fun setLanguage(language: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_LANGUAGE] = language
+        }
+    }
+
+    override suspend fun setDateFormat(format: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_DATE_FORMAT] = format
+        }
+    }
+
+    override suspend fun setUnitSystem(system: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_UNIT_SYSTEM] = system
         }
     }
 }

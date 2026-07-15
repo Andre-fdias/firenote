@@ -3,17 +3,20 @@ package com.example.firenotes.ui.screens.consult
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -42,29 +45,26 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 // ============================================
-// LOGS
+// LOGS PADRONIZADOS
 // ============================================
 
 private const val LOG_TAG = "FireConsult"
 private fun logD(message: String) = android.util.Log.d(LOG_TAG, message)
-private fun logE(message: String, throwable: Throwable? = null) = 
+private fun logE(message: String, throwable: Throwable? = null) =
     android.util.Log.e(LOG_TAG, message, throwable)
 
-// ============================================
-// SCREEN PRINCIPAL
-// ============================================
-
+/* STREAMING_CHUNK: Initializing ConsultScreen with scaffold and reactive filtering states... */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConsultScreen(
     viewModel: ConsultViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToEdit: (String) -> Unit,
+    onNavigateToDetails: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
-    
+
     // Check if there are active filters
     val hasActiveFilters = uiState.filters.talao.isNotBlank() ||
             uiState.filters.cidade.isNotBlank() ||
@@ -85,7 +85,7 @@ fun ConsultScreen(
                 backgroundColor = FireColors.Surface,
                 elevation = 2.dp,
                 actions = {
-                    // Botão de filtros com badge
+                    // Botão de filtros com badge de notificação de filtros ativos
                     BadgedBox(
                         badge = {
                             if (hasActiveFilters) {
@@ -93,24 +93,24 @@ fun ConsultScreen(
                                     containerColor = FireColors.Primary,
                                     contentColor = Color.White
                                 ) {
-                                    Text("!", fontSize = 10.sp)
+                                    Text("!", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     ) {
                         FireIconButton(
                             icon = FireIcons.FilterList,
-                            onClick = { 
+                            onClick = {
                                 logD("User clicked filters button")
-                                showFilterSheet = true 
+                                showFilterSheet = true
                             }
                         )
                     }
                     FireIconButton(
                         icon = FireIcons.Refresh,
-                        onClick = { 
+                        onClick = {
                             logD("User clicked refresh button")
-                            viewModel.loadOccurrences() 
+                            viewModel.loadOccurrences()
                         }
                     )
                 }
@@ -127,9 +127,9 @@ fun ConsultScreen(
                 .padding(FireSpacing.Medium),
             verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
         ) {
-            // ============================================
-            // BARRA DE PESQUISA
-            // ============================================
+
+            /* STREAMING_CHUNK: Rendering search bar and global query components... */
+            // Global search bar with visual elevations
             AnimatedVisibility(
                 visible = true,
                 enter = fadeIn(animationSpec = tween(400)) + slideInVertically(initialOffsetY = { -it / 2 })
@@ -144,21 +144,17 @@ fun ConsultScreen(
                 )
             }
 
-            // ============================================
-            // RESULTADO DA BUSCA
-            // ============================================
             if (uiState.searchGlobal.isNotBlank()) {
                 Text(
                     text = "${uiState.filteredOccurrences.size} resultados encontrados",
                     fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
                     color = FireColors.OnSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
 
-            // ============================================
-            // ORDENAÇÃO E FILTROS RÁPIDOS
-            // ============================================
+            /* STREAMING_CHUNK: Building list sorting option selections... */
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -167,10 +163,10 @@ fun ConsultScreen(
                 Text(
                     text = "Ordenar por:",
                     style = FireTypography.Label,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
                     color = FireColors.OnSurfaceVariant
                 )
-                
+
                 var sortExpanded by remember { mutableStateOf(false) }
                 Box {
                     FireOutlinedButton(
@@ -228,27 +224,15 @@ fun ConsultScreen(
                 }
             }
 
-            // ============================================
-            // ESTADOS DA TELA
-            // ============================================
+            /* STREAMING_CHUNK: Handling list states and rendering the dynamic occurrences list... */
             when {
                 uiState.isLoading -> {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         FireLoading()
                     }
                 }
                 uiState.errorMessage != null -> {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         FireErrorState(
                             message = uiState.errorMessage!!,
                             onRetry = { viewModel.loadOccurrences() }
@@ -256,12 +240,7 @@ fun ConsultScreen(
                     }
                 }
                 uiState.filteredOccurrences.isEmpty() -> {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         FireEmptyState(
                             message = if (uiState.searchGlobal.isNotBlank() || hasActiveFilters) {
                                 "Nenhuma ocorrência encontrada com os filtros aplicados"
@@ -272,13 +251,8 @@ fun ConsultScreen(
                     }
                 }
                 else -> {
-                    // ============================================
-                    // LISTA DE OCORRÊNCIAS
-                    // ============================================
                     LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
                     ) {
                         items(
@@ -291,15 +265,14 @@ fun ConsultScreen(
                             ) {
                                 ConsultCard(
                                     ocorrencia = ocorrencia,
-                                    onClick = { 
+                                    onClick = {
                                         logD("User selected occurrence: ${ocorrencia.id}")
-                                        viewModel.selectOccurrence(ocorrencia) 
+                                        onNavigateToDetails(ocorrencia.id!!)
                                     }
                                 )
                             }
                         }
-                        
-                        // Rodapé com contagem
+
                         item {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
@@ -318,9 +291,6 @@ fun ConsultScreen(
         }
     }
 
-    // ============================================
-    // DIALOG DE FILTROS
-    // ============================================
     if (showFilterSheet) {
         FiltersDialog(
             currentFilters = uiState.filters,
@@ -338,76 +308,40 @@ fun ConsultScreen(
         )
     }
 
-    // ============================================
-    // DIALOG DE DETALHES
-    // ============================================
-    if (uiState.showDetailsDialog && uiState.selectedOccurrence != null) {
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val reportsViewModel: com.example.firenotes.ui.screens.reports.ReportsViewModel = hiltViewModel()
-        
-        OcorrenciaDetailsDialog(
-            ocorrencia = uiState.selectedOccurrence!!,
-            onDismiss = viewModel::dismissDetails,
-            onEditClick = {
-                logD("Editing occurrence: ${uiState.selectedOccurrence!!.id}")
-                viewModel.dismissDetails()
-                onNavigateToEdit(uiState.selectedOccurrence!!.id!!)
-            },
-            onDeleteClick = {
-                logD("Deleting occurrence: ${uiState.selectedOccurrence!!.id}")
-                viewModel.deleteOccurrence(uiState.selectedOccurrence!!.id!!)
-            },
-            onExportPdfClick = {
-                logD("Exporting PDF for occurrence: ${uiState.selectedOccurrence!!.id}")
-                reportsViewModel.exportOccurrencePdf(uiState.selectedOccurrence!!) { uri ->
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, "application/pdf")
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(intent)
-                }
-            },
-            onShareClick = {
-                logD("Sharing PDF for occurrence: ${uiState.selectedOccurrence!!.id}")
-                reportsViewModel.exportOccurrencePdf(uiState.selectedOccurrence!!) { uri ->
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "application/pdf"
-                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(android.content.Intent.createChooser(intent, "Compartilhar Relatório"))
-                }
-            },
-            onDuplicateClick = {
-                logD("Duplicating occurrence: ${uiState.selectedOccurrence!!.id}")
-                viewModel.duplicateOccurrence(uiState.selectedOccurrence!!) { duplicated ->
-                    onNavigateToEdit(duplicated.id!!)
-                }
-            }
-        )
-    }
+
 }
 
-// ============================================
-// CARD DE OCORRÊNCIA
-// ============================================
-
+/* STREAMING_CHUNK: Designing ConsultCard with dynamic turn status... */
 @Composable
 fun ConsultCard(
     ocorrencia: Ocorrencia,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val formatter = remember { 
-        DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault()) 
+    val formatter = remember {
+        DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault())
     }
-    
+
     val natureColor = when (ocorrencia.natureza) {
         NaturezaOcorrencia.INCENDIO -> FireColors.NaturezaIncendio
         NaturezaOcorrencia.SALVAMENTO -> FireColors.NaturezaSalvamento
         NaturezaOcorrencia.ACIDENTE_TRANSITO -> FireColors.NaturezaAcidente
         NaturezaOcorrencia.QUEDA -> FireColors.NaturezaQueda
         NaturezaOcorrencia.PESSOAL -> FireColors.NaturezaPessoal
+        NaturezaOcorrencia.INDEFINIDA -> androidx.compose.ui.graphics.Color.Gray
+    }
+
+    // Cálculo retroativo dinâmico do turno/prontidão com base no momento da ocorrência
+    val localDate = remember(ocorrencia.dataHora) {
+        java.time.LocalDate.ofInstant(ocorrencia.dataHora, java.time.ZoneId.systemDefault())
+    }
+
+    val prontidao = remember(localDate) {
+        try {
+            com.example.firenotes.data.service.ProntidaoService.getProntidaoForDate(localDate)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     Card(
@@ -421,7 +355,7 @@ fun ConsultCard(
         )
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            // Barra lateral colorida
+            // Barra lateral colorida da natureza do chamado
             Box(
                 modifier = Modifier
                     .width(6.dp)
@@ -435,7 +369,7 @@ fun ConsultCard(
                     .padding(FireSpacing.Medium),
                 verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
             ) {
-                // Cabeçalho: Talão e Data
+                // Cabeçalho: Talão e Data/Prontidão
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -455,11 +389,48 @@ fun ConsultCard(
                             textColor = FireColors.Success
                         )
                     }
-                    Text(
-                        text = formatter.format(ocorrencia.dataHora),
-                        style = FireTypography.Label,
-                        color = FireColors.OnSurfaceVariant
-                    )
+
+                    /* STREAMING_CHUNK: Rendering the Date and active Prontidao layout... */
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = formatter.format(ocorrencia.dataHora),
+                            style = FireTypography.Label,
+                            fontWeight = FontWeight.SemiBold,
+                            color = FireColors.OnSurfaceVariant
+                        )
+
+                        // Badge dinâmico do turno/prontidão associada
+                        if (prontidao != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(prontidao.cor.copy(alpha = 0.15f))
+                                    .border(0.5.dp, prontidao.cor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .background(prontidao.cor, CircleShape)
+                                    )
+                                    Text(
+                                        text = prontidao.nome.uppercase(),
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (prontidao.cor == Color(0xFFFFB300)) Color(0xFF6B4C00) else prontidao.cor,
+                                        letterSpacing = 0.3.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Natureza e Local
@@ -486,7 +457,7 @@ fun ConsultCard(
                     )
                 }
 
-                // Estatísticas
+                // Estatísticas rápidas em pills
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
                     modifier = Modifier.fillMaxWidth()
@@ -508,6 +479,7 @@ fun ConsultCard(
                     )
                 }
 
+                /* STREAMING_CHUNK: Displaying active viaturas badges inside ConsultCard... */
                 // Tags rápidas de viaturas
                 if (ocorrencia.viaturas.isNotEmpty()) {
                     Row(
@@ -544,7 +516,7 @@ fun ConsultCard(
                 }
             }
 
-            // Setinha indicadora
+            // Indicador de seta lateral para expansão de detalhes
             Icon(
                 imageVector = FireIcons.ChevronRight,
                 contentDescription = null,
@@ -576,7 +548,7 @@ private fun StatPill(
         Text(
             text = value.toString(),
             fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.Bold,
             color = FireColors.OnBackground
         )
         Text(
@@ -587,8 +559,9 @@ private fun StatPill(
     }
 }
 
+/* STREAMING_CHUNK: Rendering the advanced Filters Dialog... */
 // ============================================
-// FILTERS DIALOG - VERSÃO MELHORADA
+// FILTERS DIALOG
 // ============================================
 
 @Composable
@@ -609,7 +582,6 @@ fun FiltersDialog(
     var selectedNature by remember { mutableStateOf(currentFilters.natureza) }
     var selectedStatus by remember { mutableStateOf(currentFilters.status) }
 
-    // Contagem de filtros ativos
     val activeFiltersCount = listOf(
         talao, cidade, bairro, viatura, militar, placa, nome, hospital, selectedNature?.let { "nature" }
     ).count { it != null && it != "" }
@@ -667,7 +639,6 @@ fun FiltersDialog(
                 .padding(vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
         ) {
-            // Status
             Text("Status:", style = FireTypography.Label, fontWeight = FontWeight.Bold)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small),
@@ -685,7 +656,6 @@ fun FiltersDialog(
                 }
             }
 
-            // Natureza
             Text("Natureza:", style = FireTypography.Label, fontWeight = FontWeight.Bold)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small),
@@ -717,7 +687,6 @@ fun FiltersDialog(
                 }
             }
 
-            // Campos de texto
             FireOutlinedTextField(
                 value = talao,
                 onValueChange = { talao = it },
@@ -808,323 +777,5 @@ fun FilterChip(
             color = if (selected) FireColors.Primary else FireColors.OnSurfaceVariant,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
-    }
-}
-
-// ============================================
-// DETALHES DIALOG - VERSÃO MELHORADA
-// ============================================
-
-@Composable
-fun OcorrenciaDetailsDialog(
-    ocorrencia: Ocorrencia,
-    onDismiss: () -> Unit,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onExportPdfClick: () -> Unit,
-    onShareClick: () -> Unit,
-    onDuplicateClick: () -> Unit
-) {
-    val formatter = remember { 
-        DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault()) 
-    }
-    
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .shadow(8.dp, RoundedCornerShape(16.dp)),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = FireColors.Surface
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
-            ) {
-                // Cabeçalho
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "📋 ${ocorrencia.protocolo}",
-                            style = FireTypography.HeadlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = FireColors.OnBackground
-                        )
-                        Text(
-                            text = formatter.format(ocorrencia.dataHora),
-                            style = FireTypography.BodyMedium,
-                            color = FireColors.OnSurfaceVariant
-                        )
-                    }
-                    FireStatusChip(
-                        text = "ATIVO",
-                        backgroundColor = FireColors.Success.copy(alpha = 0.12f),
-                        textColor = FireColors.Success
-                    )
-                }
-
-                // Informações principais
-                InfoRow(
-                    icon = "🏷️",
-                    label = "Natureza",
-                    value = ocorrencia.natureza.descricao
-                )
-                
-                InfoRow(
-                    icon = "📍",
-                    label = "Endereço",
-                    value = "${ocorrencia.rua ?: ""}, ${ocorrencia.numero ?: ""} - ${ocorrencia.bairro ?: ""}, ${ocorrencia.cidade ?: ""}/${ocorrencia.uf ?: ""}"
-                )
-                
-                if (ocorrencia.latitude != null) {
-                    InfoRow(
-                        icon = "🗺️",
-                        label = "Coordenadas",
-                        value = "Lat ${"%.5f".format(ocorrencia.latitude)} | Lng ${"%.5f".format(ocorrencia.longitude)}"
-                    )
-                }
-
-                HorizontalDivider(color = FireColors.OnSurface.copy(alpha = 0.08f))
-
-                // Viaturas
-                if (ocorrencia.viaturas.isNotEmpty()) {
-                    SectionHeader(title = "🚒 Guarnição e Viaturas")
-                    ocorrencia.viaturas.forEach { v ->
-                        ViaturaDetail(viatura = v)
-                    }
-                }
-
-                // Veículos
-                if (ocorrencia.veiculos.isNotEmpty()) {
-                    SectionHeader(title = "🚗 Veículos Envolvidos")
-                    ocorrencia.veiculos.forEach { veiculo ->
-                        Text(
-                            text = "• ${veiculo.placa ?: "SEM PLACA"} | ${veiculo.modelo ?: "Modelo não informado"} | ${veiculo.cor ?: "Cor não informada"}",
-                            style = FireTypography.Body,
-                            color = FireColors.OnBackground
-                        )
-                    }
-                }
-
-                // Vítimas
-                if (ocorrencia.vitimas.isNotEmpty()) {
-                    SectionHeader(title = "👤 Vítimas e Socorro")
-                    ocorrencia.vitimas.forEach { vitima ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = FireColors.SurfaceVariant.copy(alpha = 0.3f)
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Text(
-                                    text = vitima.nome ?: "Não Identificado",
-                                    style = FireTypography.Body,
-                                    fontWeight = FontWeight.Medium,
-                                    color = FireColors.OnBackground
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = "Glasgow: ${vitima.sinaisVitais.escalaGCS ?: "N/D"}",
-                                        fontSize = 12.sp,
-                                        color = FireColors.OnSurfaceVariant
-                                    )
-                                    Text(
-                                        text = "P.A: ${vitima.sinaisVitais.pressaoArterial ?: "N/D"}",
-                                        fontSize = 12.sp,
-                                        color = FireColors.OnSurfaceVariant
-                                    )
-                                    Text(
-                                        text = "FC: ${vitima.sinaisVitais.pulso ?: "N/D"}",
-                                        fontSize = 12.sp,
-                                        color = FireColors.OnSurfaceVariant
-                                    )
-                                }
-                                Text(
-                                    text = "🏥 ${vitima.hospitalDestino ?: "Não encaminhado"}",
-                                    fontSize = 12.sp,
-                                    color = FireColors.OnSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Histórico
-                ocorrencia.historico?.let { hist ->
-                    HorizontalDivider(color = FireColors.OnSurface.copy(alpha = 0.08f))
-                    SectionHeader(title = "📝 Histórico Narrativo")
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = FireColors.SurfaceVariant.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Text(
-                            text = hist,
-                            style = FireTypography.Body,
-                            color = FireColors.OnBackground,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-
-                // Botões de ação
-                HorizontalDivider(color = FireColors.OnSurface.copy(alpha = 0.08f))
-                
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    FireButton(
-                        text = "📄 PDF",
-                        onClick = onExportPdfClick,
-                        containerColor = FireColors.Primary,
-                        modifier = Modifier.weight(1f),
-                        icon = FireIcons.PictureAsPdf
-                    )
-                    FireButton(
-                        text = "📤 Compartilhar",
-                        onClick = onShareClick,
-                        containerColor = FireColors.Secondary,
-                        modifier = Modifier.weight(1f),
-                        icon = FireIcons.Share
-                    )
-                }
-                
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    FireButton(
-                        text = "📝 Editar",
-                        onClick = onEditClick,
-                        containerColor = FireColors.Warning,
-                        modifier = Modifier.weight(1f),
-                        icon = FireIcons.Edit
-                    )
-                    FireButton(
-                        text = "📋 Duplicar",
-                        onClick = onDuplicateClick,
-                        containerColor = Color(0xFF9C27B0),
-                        modifier = Modifier.weight(1f),
-                        icon = FireIcons.ContentCopy
-                    )
-                }
-                
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    FireTextButton(
-                        text = "🗑️ Excluir",
-                        onClick = onDeleteClick,
-                        modifier = Modifier.weight(1f),
-                        contentColor = FireColors.Error
-                    )
-                    FireButton(
-                        text = "Fechar",
-                        onClick = onDismiss,
-                        containerColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ============================================
-// COMPONENTES AUXILIARES
-// ============================================
-
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = FireTypography.Title,
-        fontWeight = FontWeight.Bold,
-        color = FireColors.Primary,
-        modifier = Modifier.padding(top = 4.dp)
-    )
-}
-
-@Composable
-private fun InfoRow(
-    icon: String,
-    label: String,
-    value: String
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = "$icon $label:",
-            style = FireTypography.Body,
-            fontWeight = FontWeight.Medium,
-            color = FireColors.OnSurfaceVariant,
-            modifier = Modifier.width(100.dp)
-        )
-        Text(
-            text = value,
-            style = FireTypography.Body,
-            color = FireColors.OnBackground,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun ViaturaDetail(viatura: Viatura) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = FireColors.SurfaceVariant.copy(alpha = 0.2f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = "🚒 ${viatura.prefixo} (${viatura.tipo})",
-                style = FireTypography.Body,
-                fontWeight = FontWeight.Medium,
-                color = FireColors.OnBackground
-            )
-            viatura.equipe.forEach { m ->
-                Text(
-                    text = "  • RE ${m.re} - ${m.graduacao.descricao} ${m.nomeGuerra} [${m.funcao ?: "Equipe"}]",
-                    style = FireTypography.Body,
-                    color = FireColors.OnSurfaceVariant
-                )
-            }
-        }
     }
 }

@@ -81,6 +81,14 @@ class PersonIdentificationViewModel @Inject constructor(
         _state.update { it.copy(oabState = oabState) }
     }
 
+    fun updateTelefone(value: String) {
+        _state.update { it.copy(telefone = value) }
+    }
+
+    fun updateEmail(value: String) {
+        _state.update { it.copy(email = value) }
+    }
+
     fun processOcr(imageUri: android.net.Uri) {
         _state.update { it.copy(isOcrProcessing = true) }
         scope.launch {
@@ -264,6 +272,7 @@ class PersonIdentificationViewModel @Inject constructor(
                         "nome" to state.cpfState.nome,
                         "cpf" to state.cpfState.cpf,
                         "nascimento" to state.cpfState.nascimento,
+                        "filiacao" to state.cpfState.filiacao,
                         "situacao" to state.cpfState.situacao,
                         "dataInscricao" to state.cpfState.dataInscricao
                     )
@@ -307,7 +316,9 @@ class PersonIdentificationViewModel @Inject constructor(
                         rgUf = state.rgState.uf,
                         nascimento = state.rgState.nascimento,
                         naturalidade = state.rgState.naturalidade,
-                        filiacao = state.rgState.mae
+                        filiacao = state.rgState.mae,
+                        telefone = state.telefone.takeIf { it.isNotBlank() },
+                        email = state.email.takeIf { it.isNotBlank() }
                     )
                 }
                 DocumentType.CIN -> {
@@ -319,7 +330,9 @@ class PersonIdentificationViewModel @Inject constructor(
                         sexo = state.cinState.sexo,
                         nacionalidade = state.cinState.nacionalidade,
                         naturalidade = state.cinState.naturalidade,
-                        rgOrgaoEmissor = state.cinState.orgao
+                        rgOrgaoEmissor = state.cinState.orgao,
+                        telefone = state.telefone.takeIf { it.isNotBlank() },
+                        email = state.email.takeIf { it.isNotBlank() }
                     )
                 }
                 DocumentType.CNH -> {
@@ -327,25 +340,34 @@ class PersonIdentificationViewModel @Inject constructor(
                         nome = state.cnhState.nome,
                         cpf = state.cnhState.cpf,
                         nascimento = state.cnhState.nascimento,
-                        filiacao = state.cnhState.filiacao
+                        filiacao = state.cnhState.filiacao,
+                        telefone = state.telefone.takeIf { it.isNotBlank() },
+                        email = state.email.takeIf { it.isNotBlank() }
                     )
                 }
                 DocumentType.CPF -> {
                     pessoa = Pessoa(
                         nome = state.cpfState.nome,
                         cpf = state.cpfState.cpf,
-                        nascimento = state.cpfState.nascimento
+                        nascimento = state.cpfState.nascimento,
+                        filiacao = state.cpfState.filiacao,
+                        telefone = state.telefone.takeIf { it.isNotBlank() },
+                        email = state.email.takeIf { it.isNotBlank() }
                     )
                 }
                 DocumentType.CRLV -> {
                     pessoa = Pessoa(
                         nome = state.crlvState.proprietario,
-                        cpf = state.crlvState.cpfProprietario
+                        cpf = state.crlvState.cpfProprietario,
+                        telefone = state.telefone.takeIf { it.isNotBlank() },
+                        email = state.email.takeIf { it.isNotBlank() }
                     )
                 }
                 DocumentType.OAB -> {
                     pessoa = Pessoa(
-                        nome = state.oabState.nome
+                        nome = state.oabState.nome,
+                        telefone = state.telefone.takeIf { it.isNotBlank() },
+                        email = state.email.takeIf { it.isNotBlank() }
                     )
                 }
             }
@@ -406,7 +428,7 @@ class PersonIdentificationViewModel @Inject constructor(
 }
 
 data class PersonIdentificationUiState(
-    val selectedType: DocumentType? = null,
+    val selectedType: DocumentType? = DocumentType.RG,
     val occurrenceId: String = "",
     val isOcrProcessing: Boolean = false,
     val isSaving: Boolean = false,
@@ -418,5 +440,7 @@ data class PersonIdentificationUiState(
     val cnhState: CnhDocumentState = CnhDocumentState(),
     val cpfState: CpfDocumentState = CpfDocumentState(),
     val crlvState: CrlvDocumentState = CrlvDocumentState(),
-    val oabState: OabDocumentState = OabDocumentState()
+    val oabState: OabDocumentState = OabDocumentState(),
+    val telefone: String = "",
+    val email: String = ""
 )

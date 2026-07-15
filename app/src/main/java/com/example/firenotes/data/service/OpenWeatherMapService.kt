@@ -21,10 +21,11 @@ import kotlinx.serialization.encodeToString
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.Locale
 import javax.inject.Inject
 
-class OpenMeteoWeatherService @Inject constructor(
+class OpenWeatherMapService @Inject constructor(
     private val dataStore: DataStore<Preferences>,
     @ApplicationContext private val context: Context
 ) : WeatherService {
@@ -32,8 +33,8 @@ class OpenMeteoWeatherService @Inject constructor(
     companion object {
         private const val CACHE_EXPIRY_MINUTES = 30L
         private const val TAG = "FireWeather"
-        private const val BASE_URL = "https://api.open-meteo.com/v1/forecast"
-        private const val FALLBACK_URL = "https://wttr.in/{city}?format=%C+%t+%h+%w"
+        private const val API_KEY = "f33fb834cc84e015b8b724a0befae3ac"
+        private const val BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
         private val WEATHER_CACHE_KEY = stringPreferencesKey("weather_cache")
         private val WEATHER_UPDATE_KEY = longPreferencesKey("weather_update")
@@ -48,10 +49,10 @@ class OpenMeteoWeatherService @Inject constructor(
         }
 
         // 2. Buscar dados da API
-        logD("🔄 Buscando dados da API para lat=$lat, lon=$lon")
+        logD("🔄 Buscando dados da API OpenWeatherMap para lat=$lat, lon=$lon")
         
         try {
-            val url = buildUrl(lat, lon)
+            val url = "$BASE_URL?lat=$lat&lon=$lon&appid=$API_KEY&units=metric&lang=pt_br"
             val response = fetchWeatherData(url)
             val weatherInfo = parseWeatherResponse(response, lat, lon)
             
@@ -76,25 +77,19 @@ class OpenMeteoWeatherService @Inject constructor(
     }
 
     override suspend fun getWeatherByCity(cityName: String): WeatherInfo {
-        logD("🔍 Buscando clima para cidade: $cityName")
+        logD("🔍 Buscando clima para cidade no OpenWeatherMap: $cityName")
         
         try {
-            // Usar geocoding para obter coordenadas
-            val coords = geocodeCity(cityName)
-            if (coords != null) {
-                return getCurrentWeather(coords.first, coords.second)
-            }
-        } catch (e: Exception) {
-            logE("❌ Erro ao geocodificar cidade: ${e.message}")
-        }
-        
-        // Fallback: usar wttr.in
-        try {
-            val url = FALLBACK_URL.replace("{city}", cityName)
+            val encodedCity = URLEncoder.encode(cityName, "UTF-8")
+            val url = "$BASE_URL?q=$encodedCity&appid=$API_KEY&units=metric&lang=pt_br"
             val response = fetchWeatherData(url)
-            return parseWttrResponse(response, cityName)
+            val weatherInfo = parseWeatherResponse(response)
+            
+            // Salvar cache
+            saveWeatherCache(weatherInfo)
+            return weatherInfo
         } catch (e: Exception) {
-            logE("❌ Erro ao buscar clima via wttr.in: ${e.message}")
+            logE("❌ Erro ao buscar clima por cidade: ${e.message}")
             throw e
         }
     }
@@ -140,14 +135,6 @@ class OpenMeteoWeatherService @Inject constructor(
         return diff > (CACHE_EXPIRY_MINUTES * 60 * 1000)
     }
 
-    private fun buildUrl(lat: Double, lon: Double): String {
-        return "$BASE_URL?latitude=$lat&longitude=$lon&" +
-                "current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&" +
-                "hourly=precipitation_probability&" +
-                "timezone=America/Sao_Paulo&" +
-                "forecast_days=1"
-    }
-
     private suspend fun fetchWeatherData(url: String): String {
         return withContext(Dispatchers.IO) {
             val connection = URL(url).openConnection() as HttpURLConnection
@@ -168,95 +155,72 @@ class OpenMeteoWeatherService @Inject constructor(
         }
     }
 
-    private suspend fun parseWeatherResponse(json: String, lat: Double, lon: Double): WeatherInfo {
+    private suspend fun parseWeatherResponse(
+        json: String, 
+        fallbackLat: Double? = null, 
+        fallbackLon: Double? = null
+    ): WeatherInfo {
         val root = Json.parseToJsonElement(json).jsonObject
         
-        // Extrair dados
-        val temp = root["current"]?.jsonObject?.get("temperature_2m")?.jsonPrimitive?.content?.toDoubleOrNull() ?: 24.0
-        val humidity = root["current"]?.jsonObject?.get("relative_humidity_2m")?.jsonPrimitive?.content?.toIntOrNull() ?: 68
-        val wind = root["current"]?.jsonObject?.get("wind_speed_10m")?.jsonPrimitive?.content?.toDoubleOrNull() ?: 12.0
-        val weatherCode = root["current"]?.jsonObject?.get("weather_code")?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+        // Extrair dados principais
+        val mainObj = root["main"]?.jsonObject
+        val temp = mainObj?.get("temp")?.jsonPrimitive?.content?.toDoubleOrNull() ?: 24.0
+        val humidity = mainObj?.get("humidity")?.jsonPrimitive?.content?.toIntOrNull() ?: 68
         
-        // Precipitação
-        val precipProb = root["hourly"]?.jsonObject?.get("precipitation_probability")?.jsonArray
-            ?.firstOrNull()?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+        val windObj = root["wind"]?.jsonObject
+        val windSpeedMps = windObj?.get("speed")?.jsonPrimitive?.content?.toDoubleOrNull() ?: 3.3
+        val windSpeedKmh = (windSpeedMps * 3.6).toInt()
+        
+        val cloudsObj = root["clouds"]?.jsonObject
+        val precipProb = cloudsObj?.get("all")?.jsonPrimitive?.content?.toIntOrNull() ?: 0
 
-        // Geocodificar coordenadas para obter cidade
-        val cityName = geocodeReverse(lat, lon) ?: "Localização desconhecida"
+        // Obter nome da cidade e coordenadas
+        val jsonName = root["name"]?.jsonPrimitive?.content
+        val country = root["sys"]?.jsonObject?.get("country")?.jsonPrimitive?.content
+        
+        val coordObj = root["coord"]?.jsonObject
+        val lat = coordObj?.get("lat")?.jsonPrimitive?.content?.toDoubleOrNull() ?: fallbackLat
+        val lon = coordObj?.get("lon")?.jsonPrimitive?.content?.toDoubleOrNull() ?: fallbackLon
 
-        // Mapear weather code para condição
-        val (condition, icon) = mapWeatherCode(weatherCode)
+        val cityName = if (lat != null && lon != null) {
+            geocodeReverse(lat, lon) ?: listOfNotNull(jsonName, country).joinToString(", ")
+        } else {
+            listOfNotNull(jsonName, country).joinToString(", ")
+        }.ifBlank { "Localização desconhecida" }
+
+        // Mapear weather id para condição
+        val weatherObj = root["weather"]?.jsonArray?.firstOrNull()?.jsonObject
+        val weatherId = weatherObj?.get("id")?.jsonPrimitive?.content?.toIntOrNull() ?: 800
+        val description = weatherObj?.get("description")?.jsonPrimitive?.content?.replaceFirstChar { 
+            if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() 
+        } ?: "Céu limpo"
+
+        val (_, icon) = mapOpenWeatherMapId(weatherId)
 
         return WeatherInfo(
             city = cityName,
             temperature = temp.toInt(),
-            condition = condition,
+            condition = description,
             conditionIcon = icon,
             humidity = humidity,
-            windSpeed = wind.toInt(),
+            windSpeed = windSpeedKmh,
             precipitation = precipProb,
             timestamp = System.currentTimeMillis()
         )
     }
 
-    private fun parseWttrResponse(response: String, cityName: String): WeatherInfo {
-        // Parse simples do wttr.in
-        val parts = response.split("+")
-        val condition = parts.getOrNull(0)?.trim() ?: "Ensolarado"
-        val tempStr = parts.getOrNull(1)?.replace("°C", "")?.trim() ?: "24"
-        val humidityStr = parts.getOrNull(2)?.replace("%", "")?.trim() ?: "68"
-        val windStr = parts.getOrNull(3)?.replace("km/h", "")?.trim() ?: "12"
-
-        return WeatherInfo(
-            city = cityName,
-            temperature = tempStr.toIntOrNull() ?: 24,
-            condition = condition,
-            conditionIcon = getConditionIcon(condition),
-            humidity = humidityStr.toIntOrNull() ?: 68,
-            windSpeed = windStr.toIntOrNull() ?: 12,
-            precipitation = 0,
-            timestamp = System.currentTimeMillis()
-        )
-    }
-
-    private fun mapWeatherCode(code: Int): Pair<String, String> {
-        return when (code) {
-            0 -> Pair("Céu limpo", "☀️")
-            1, 2, 3 -> Pair("Parcialmente nublado", "⛅")
-            45, 48 -> Pair("Nevoeiro", "🌫️")
-            51, 53, 55 -> Pair("Garoa", "🌧️")
-            61, 63, 65 -> Pair("Chuva", "🌧️")
-            71, 73, 75 -> Pair("Neve", "❄️")
-            80, 81, 82 -> Pair("Pancadas de chuva", "🌧️")
-            95, 96, 99 -> Pair("Tempestade", "⚡")
+    private fun mapOpenWeatherMapId(id: Int): Pair<String, String> {
+        return when (id) {
+            in 200..299 -> Pair("Tempestade", "⚡")
+            in 300..399 -> Pair("Garoa", "🌧️")
+            in 500..599 -> Pair("Chuva", "🌧️")
+            in 600..699 -> Pair("Neve", "❄️")
+            in 700..799 -> Pair("Nevoeiro", "🌫️")
+            800 -> Pair("Céu limpo", "☀️")
+            801 -> Pair("Poucas nuvens", "🌤️")
+            802 -> Pair("Nuvens dispersas", "⛅")
+            803, 804 -> Pair("Nublado", "☁️")
             else -> Pair("Tempo firme", "☀️")
-        }
-    }
-
-    private fun getConditionIcon(condition: String): String {
-        return when {
-            condition.contains("sun", ignoreCase = true) -> "☀️"
-            condition.contains("rain", ignoreCase = true) -> "🌧️"
-            condition.contains("cloud", ignoreCase = true) -> "⛅"
-            condition.contains("snow", ignoreCase = true) -> "❄️"
-            condition.contains("storm", ignoreCase = true) -> "⚡"
-            else -> "☀️"
-        }
-    }
-
-    private suspend fun geocodeCity(cityName: String): Pair<Double, Double>? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val geocoder = Geocoder(context, Locale.getDefault())
-                @Suppress("DEPRECATION")
-                val addresses = geocoder.getFromLocationName(cityName, 1)
-                addresses?.firstOrNull()?.let { address ->
-                    address.latitude to address.longitude
-                }
-            } catch (e: Exception) {
-                logE("❌ Erro no geocoding: ${e.message}")
-                null
-            }
         }
     }
 

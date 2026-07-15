@@ -8,16 +8,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.firenotes.domain.model.*
-import com.example.firenotes.domain.ocr.DocumentType
 import com.example.firenotes.domain.ocr.OCREngine
-import com.example.firenotes.domain.repository.CameraCaptureService
-import com.example.firenotes.domain.repository.ImageProcessingService
-import com.example.firenotes.domain.repository.LocationService
-import com.example.firenotes.domain.repository.OcorrenciaRepository
-import com.example.firenotes.domain.repository.OcrDocumentResult
-import com.example.firenotes.domain.repository.OcrField
-import com.example.firenotes.domain.repository.OcrService
-import com.example.firenotes.ui.designsystem.colors.FireColors
+import com.example.firenotes.domain.repository.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,71 +25,64 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
+import com.example.firenotes.ui.screens.occurrence.models.FormStage
+import com.example.firenotes.data.local.dao.HomeOperationalDao
+import com.example.firenotes.data.local.entities.RoomProntidaoDia
+import com.example.firenotes.util.LogHelper
+// Adicionar no topo do arquivo
+import com.example.firenotes.data.service.ProntidaoService
+
 
 // ============================================
-// LOGS PADRONIZADOS (Padrão FireNotes)
+// LOGS PADRONIZADOS
 // ============================================
 
 private const val LOG_TAG = "FireOccurrence"
-
-private fun logD(message: String) = android.util.Log.d(LOG_TAG, message)
-private fun logE(message: String, throwable: Throwable? = null) = 
-    android.util.Log.e(LOG_TAG, message, throwable)
-private fun logW(message: String) = android.util.Log.w(LOG_TAG, message)
-private fun logI(message: String) = android.util.Log.i(LOG_TAG, message)
+private fun logD(message: String) = LogHelper.d(LOG_TAG, message)
+private fun logE(message: String, throwable: Throwable? = null) = LogHelper.e(LOG_TAG, message, throwable)
+private fun logW(message: String) = LogHelper.w(LOG_TAG, message)
 
 // ============================================
-// UI STATE E ESTÁGIOS DO FORMULÁRIO
+// UI STATE
 // ============================================
 
-enum class FormStage {
-    INITIAL_DATA,
-    NATURE_SELECTION,
-    TABS
-}
+
 
 data class OccurrenceFormUiState(
-    val id: String? = null, // Database occurrence UUID
-    val protocolo: String = "", // Talão number
-    val data: String = "", // dd/MM/yyyy
-    val hora: String = "", // HH:mm
-    val natureza: NaturezaOcorrencia = NaturezaOcorrencia.PESSOAL,
+    val id: String? = null,
+    val protocolo: String = "",
+    val data: String = "",
+    val hora: String = "",
+    val natureza: NaturezaOcorrencia = NaturezaOcorrencia.INDEFINIDA,
+    val subNaturezaSelecionada: String? = null,
+    val isSaved: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    
-    // Address
     val rua: String = "",
     val numero: String = "",
     val bairro: String = "",
     val cidade: String = "",
     val uf: String = "",
     val isGpsLoading: Boolean = false,
-    
-    // Form Content
     val historico: String = "",
-    val fotos: List<String> = emptyList(), // URLs of uploaded photos
-    val videos: List<String> = emptyList(), // URLs of uploaded videos
-    
-    // Support Details
+    val fotos: List<String> = emptyList(),
+    val videos: List<String> = emptyList(),
     val orgaosDisponiveis: List<OrgaoApoio> = emptyList(),
     val apoiosDetalhados: List<ApoioOcorrencia> = emptyList(),
-    
-    // Entities
     val pessoas: List<Pessoa> = emptyList(),
     val documentos: List<Documento> = emptyList(),
     val veiculos: List<VeiculoEnvolvido> = emptyList(),
     val vitimas: List<Vitima> = emptyList(),
     val viaturas: List<Viatura> = emptyList(),
     val evidencias: List<Evidencia> = emptyList(),
-    
-    // UI state variables
     val formStage: FormStage = FormStage.INITIAL_DATA,
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val isSavingSuccess: Boolean = false,
     val errorMessage: String? = null,
     val operationProgress: Float = 0f,
-    val operationMessage: String? = null
+    val operationMessage: String? = null,
+    val prontidaoColor: String = "VERDE"
 )
 
 // ============================================
@@ -112,6 +97,7 @@ class OccurrenceFormViewModel @Inject constructor(
     private val cameraCaptureService: CameraCaptureService,
     private val imageProcessingService: ImageProcessingService,
     private val ocrEngine: OCREngine,
+    private val homeOperationalDao: HomeOperationalDao,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -119,50 +105,45 @@ class OccurrenceFormViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(OccurrenceFormUiState())
     val uiState: StateFlow<OccurrenceFormUiState> = _uiState.asStateFlow()
 
+    // ============================================
+    // INICIALIZAÇÃO
+    // ============================================
+
     init {
         logD("ViewModel inicializado")
         initializeDefaultValues()
         loadOrgaosApoio()
+        loadProntidaoForDate(_uiState.value.data)
     }
-
-    // ============================================
-    // INICIALIZAÇÃO E CARREGAMENTO
-    // ============================================
 
     private fun initializeDefaultValues() {
         val today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
         val nowTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-        
-        _uiState.update { 
+
+        _uiState.update {
             it.copy(
                 data = today,
                 hora = nowTime
             )
         }
-        logD("Valores padrão inicializados: data=$today, hora=$nowTime")
+        logD("Valores padrão: data=$today, hora=$nowTime")
     }
 
-    fun loadOccurrence(occurrenceId: String) {
+    // ============================================
+    // CARREGAMENTO DE DADOS
+    // ============================================
+
+    fun loadOccurrence(occurrenceId: String, showLoading: Boolean = true) {
         logD("Carregando ocorrência: $occurrenceId")
-        setLoading(true)
-        
+        if (showLoading) setLoading(true)
+
         viewModelScope.launch {
             try {
                 val occurrence = repository.getOcorrenciaById(occurrenceId).getOrThrow()
-                
-                val viaturas = repository.getViaturasDaOcorrencia(occurrenceId)
-                    .getOrDefault(emptyList())
-                
-                val pessoas = repository.getPessoasDaOcorrencia(occurrenceId)
-                    .getOrDefault(emptyList())
-                
-                val documentos = repository.getDocumentosDaOcorrencia(occurrenceId)
-                    .getOrDefault(emptyList())
-                
-                val evidencias = repository.getEvidencias(occurrenceId)
-                    .getOrDefault(emptyList())
-
-                logD("Dados carregados: viaturas=${viaturas.size}, pessoas=${pessoas.size}, documentos=${documentos.size}")
+                val viaturas = repository.getViaturasDaOcorrencia(occurrenceId).getOrDefault(emptyList())
+                val pessoas = repository.getPessoasDaOcorrencia(occurrenceId).getOrDefault(emptyList())
+                val documentos = repository.getDocumentosDaOcorrencia(occurrenceId).getOrDefault(emptyList())
+                val evidencias = repository.getEvidencias(occurrenceId).getOrDefault(emptyList())
 
                 _uiState.update {
                     it.copy(
@@ -171,6 +152,7 @@ class OccurrenceFormViewModel @Inject constructor(
                         data = formatDate(occurrence.dataHora),
                         hora = formatTime(occurrence.dataHora),
                         natureza = occurrence.natureza,
+                        isSaved = true,
                         latitude = occurrence.latitude,
                         longitude = occurrence.longitude,
                         rua = occurrence.rua ?: "",
@@ -191,92 +173,143 @@ class OccurrenceFormViewModel @Inject constructor(
                         isLoading = false
                     )
                 }
-                
                 logD("Ocorrência carregada com sucesso")
+                loadProntidaoForDate(formatDate(occurrence.dataHora))
             } catch (e: Exception) {
                 logE("Erro ao carregar ocorrência", e)
-                setError("Erro ao carregar ocorrência: ${e.localizedMessage}")
-                setLoading(false)
+                setError("Erro ao carregar: ${e.localizedMessage}")
+                if (showLoading) setLoading(false)
             }
         }
     }
 
     private fun loadOrgaosApoio() {
         viewModelScope.launch {
+            val defaultAgencies = listOf(
+                OrgaoApoio("orgao_pm_area", "Polícia Militar - Policiamento de Área", "PM - Policiamento área"),
+                OrgaoApoio("orgao_pm_amb", "Polícia Militar - Ambiental", "PM - Ambiental"),
+                OrgaoApoio("orgao_pm_choque", "Polícia Militar - Choque", "PM - Choque"),
+                OrgaoApoio("orgao_pm_rod", "Polícia Militar - Rodoviária", "PM - Rodoviaria"),
+                OrgaoApoio("orgao_prf", "Polícia Rodoviária Federal", "PRF"),
+                OrgaoApoio("orgao_pf", "Polícia Federal", "PF"),
+                OrgaoApoio("orgao_samu", "Serviço de Atendimento Móvel de Urgência", "SAMU"),
+                OrgaoApoio("orgao_gcm", "Guarda Civil Metropolitana", "GCM"),
+                OrgaoApoio("orgao_dc", "Defesa Civil", "Defesa Civil"),
+                OrgaoApoio("orgao_conces", "Concessionárias de Rodovias", "Concessionárias"),
+                OrgaoApoio("orgao_outros", "Outro Órgão/Serviço", "Outros")
+            )
+            try {
+                for (agency in defaultAgencies) {
+                    repository.addOrgaoApoio(agency)
+                }
+            } catch (e: Exception) {
+                logE("Erro ao salvar órgãos padrão no banco", e)
+            }
+
             repository.getOrgaosApoio()
                 .onSuccess { list ->
-                    _uiState.update { it.copy(orgaosDisponiveis = list) }
-                    logD("Órgãos de apoio carregados: ${list.size}")
+                    val sortedList = defaultAgencies.mapNotNull { def -> list.find { it.id == def.id } }
+                    _uiState.update { it.copy(orgaosDisponiveis = if (sortedList.isNotEmpty()) sortedList else defaultAgencies) }
                 }
                 .onFailure { error ->
                     logW("Erro ao carregar órgãos de apoio, usando fallback: ${error.message}")
-                    val fallbackList = listOf(
-                        OrgaoApoio("1", "Polícia Rodoviária Federal", "PRF"),
-                        OrgaoApoio("2", "Corpo de Bombeiros Militar", "CBM"),
-                        OrgaoApoio("3", "Polícia Militar", "PM"),
-                        OrgaoApoio("4", "Serviço de Atendimento Móvel de Urgência", "SAMU"),
-                        OrgaoApoio("5", "Defesa Civil", "DC")
-                    )
-                    _uiState.update { it.copy(orgaosDisponiveis = fallbackList) }
+                    _uiState.update { it.copy(orgaosDisponiveis = defaultAgencies) }
                 }
         }
     }
 
+    private fun getFallbackOrgaos(): List<OrgaoApoio> {
+        return listOf(
+            OrgaoApoio("1", "Polícia Rodoviária Federal", "PRF"),
+            OrgaoApoio("2", "Corpo de Bombeiros Militar", "CBM"),
+            OrgaoApoio("3", "Polícia Militar", "PM"),
+            OrgaoApoio("4", "Serviço de Atendimento Móvel de Urgência", "SAMU"),
+            OrgaoApoio("5", "Defesa Civil", "DC")
+        )
+    }
+
     // ============================================
-    // ENDEREÇO E LOCALIZAÇÃO
+    // FUNÇÕES PÚBLICAS - ENDEREÇO E LOCALIZAÇÃO
     // ============================================
 
     fun updateInitialFields(talao: String, data: String, hora: String) {
-        _uiState.update { 
-            it.copy(
-                protocolo = talao,
-                data = data,
-                hora = hora
-            )
-        }
+        val oldData = _uiState.value.data
+        _uiState.update { it.copy(protocolo = talao, data = data, hora = hora) }
         saveOccurrenceDraft()
+        if (data != oldData) {
+            loadProntidaoForDate(data)
+        }
+    }
+
+    fun updateProntidao(escala: String) {
+        val dateStr = _uiState.value.data
+        val dbDate = convertDateToDatabaseFormat(dateStr)
+        if (dbDate.isNotEmpty()) {
+            _uiState.update { it.copy(prontidaoColor = escala) }
+            viewModelScope.launch {
+                try {
+                    homeOperationalDao.insertProntidao(RoomProntidaoDia(dbDate, escala))
+                    logD("Prontidao de servico atualizada para $escala na data $dbDate")
+                } catch (e: Exception) {
+                    logE("Erro ao salvar prontidao: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun loadProntidaoForDate(dateStr: String) {
+        viewModelScope.launch {
+            try {
+                val dbDate = convertDateToDatabaseFormat(dateStr)
+                if (dbDate.isNotEmpty()) {
+                    val pront = homeOperationalDao.getProntidaoForDay(dbDate)
+                    if (pront != null) {
+                        _uiState.update { it.copy(prontidaoColor = pront.escala) }
+                    } else {
+                        val localDate = LocalDate.parse(dbDate)
+                        val defaultPront = ProntidaoService.getProntidaoForDate(localDate)
+                        _uiState.update { it.copy(prontidaoColor = defaultPront.name) }
+                    }
+                }
+            } catch (e: Exception) {
+                logE("Erro ao carregar prontidao para data $dateStr: ${e.message}")
+            }
+        }
+    }
+
+    private fun convertDateToDatabaseFormat(uiDate: String): String {
+        return try {
+            val parts = uiDate.split("/")
+            if (parts.size == 3) {
+                "${parts[2]}-${parts[1]}-${parts[0]}"
+            } else {
+                ""
+            }
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     fun updateManualAddress(rua: String, numero: String, bairro: String, cidade: String, uf: String) {
-        _uiState.update {
-            it.copy(
-                rua = rua,
-                numero = numero,
-                bairro = bairro,
-                cidade = cidade,
-                uf = uf
-            )
-        }
+        _uiState.update { it.copy(rua = rua, numero = numero, bairro = bairro, cidade = cidade, uf = uf) }
         saveOccurrenceDraft()
     }
 
     fun captureLocationAndAddress() {
         logD("Iniciando captura de localização por GPS")
         _uiState.update { it.copy(isGpsLoading = true, errorMessage = null) }
-        
+
         viewModelScope.launch {
             locationService.getCurrentLocation()
-                .onSuccess { pair ->
-                    val lat = pair.first
-                    val lng = pair.second
-                    logD("Localização GPS capturada com sucesso: lat=$lat, lng=$lng")
-                    _uiState.update { 
-                        it.copy(
-                            latitude = lat,
-                            longitude = lng
-                        )
-                    }
+                .onSuccess { (lat, lng) ->
+                    logD("GPS capturado: lat=$lat, lng=$lng")
+                    _uiState.update { it.copy(latitude = lat, longitude = lng) }
                     saveOccurrenceDraft()
                     fetchAddressFromLocation(lat, lng)
                 }
                 .onFailure { error ->
-                    logE("Erro GPS ao tentar capturar localização", error)
-                    _uiState.update {
-                        it.copy(
-                            isGpsLoading = false,
-                            errorMessage = "Erro GPS: ${error.localizedMessage}"
-                        )
-                    }
+                    logE("Erro GPS", error)
+                    _uiState.update { it.copy(isGpsLoading = false, errorMessage = "Erro GPS: ${error.localizedMessage}") }
                 }
         }
     }
@@ -285,7 +318,7 @@ class OccurrenceFormViewModel @Inject constructor(
         viewModelScope.launch {
             locationService.getAddressFromLocation(lat, lng)
                 .onSuccess { address ->
-                    logD("Endereço reverso obtido com sucesso: ${address.rua}, ${address.cidade}")
+                    logD("Endereço reverso obtido: ${address.rua}, ${address.cidade}")
                     _uiState.update {
                         it.copy(
                             isGpsLoading = false,
@@ -299,82 +332,56 @@ class OccurrenceFormViewModel @Inject constructor(
                     saveOccurrenceDraft()
                 }
                 .onFailure { error ->
-                    logE("Erro ao obter endereço reverso a partir da localização", error)
-                    _uiState.update {
-                        it.copy(
-                            isGpsLoading = false,
-                            errorMessage = "Endereço por GPS falhou: ${error.localizedMessage}"
-                        )
-                    }
+                    logE("Erro ao obter endereço reverso", error)
+                    _uiState.update { it.copy(isGpsLoading = false, errorMessage = "Endereço por GPS falhou: ${error.localizedMessage}") }
                 }
         }
     }
 
-    fun validateAndProceedToNature() {
-        val state = _uiState.value
-        when {
-            state.protocolo.isBlank() -> {
-                setError("O número do talão é obrigatório.")
-            }
-            state.data.isBlank() -> {
-                setError("A data é obrigatória.")
-            }
-            state.hora.isBlank() -> {
-                setError("A hora é obrigatória.")
-            }
-            else -> {
-                logD("Dados iniciais validados com sucesso. Avançando para seleção de natureza.")
-                _uiState.update { 
-                    it.copy(
-                        formStage = FormStage.NATURE_SELECTION,
-                        errorMessage = null
-                    )
-                }
-            }
+    // ============================================
+    // FUNÇÕES PÚBLICAS - OCORRÊNCIA E NATUREZA
+    // ============================================
+
+    // Adicione esta função no OccurrenceFormViewModel.kt
+    fun selectNaturezaForCreation(natureza: NaturezaOcorrencia, subNome: String = "") {
+        _uiState.update {
+            it.copy(
+                natureza = natureza,
+                subNaturezaSelecionada = subNome.ifBlank { natureza.descricao }
+            )
         }
     }
-
-    // ============================================
-    // GESTÃO DE OCORRÊNCIA E NATUREZA
-    // ============================================
 
     fun selectNaturezaAndCreateOccurrence(natureza: NaturezaOcorrencia) {
-        logD("Selecionando natureza de ocorrência: $natureza")
+        logD("Criando ocorrência com natureza: $natureza")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
                 val occurrence = buildOccurrence(natureza)
-                
+
                 repository.createOcorrencia(occurrence)
                     .onSuccess { saved ->
-                        logD("Ocorrência criada e salva no DB local: ID=${saved.id}")
+                        logD("Ocorrência criada: ID=${saved.id}")
                         _uiState.update {
                             it.copy(
                                 id = saved.id,
                                 natureza = natureza,
                                 formStage = FormStage.TABS,
+                                isSaved = true,
                                 isLoading = false
                             )
                         }
                     }
                     .onFailure { error ->
-                        logE("Erro ao salvar nova ocorrência no DB", error)
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                errorMessage = "Erro ao criar ocorrência: ${error.localizedMessage}"
-                            )
-                        }
+                        logE("Erro ao criar ocorrência", error)
+                        setError("Erro ao criar ocorrência: ${error.localizedMessage}")
+                        setLoading(false)
                     }
             } catch (e: Exception) {
-                logE("Erro geral ao instanciar ou salvar ocorrência", e)
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Erro ao criar ocorrência: ${e.localizedMessage}"
-                    )
-                }
+                logE("Erro geral ao criar ocorrência", e)
+                setError("Erro ao criar ocorrência: ${e.localizedMessage}")
+                setLoading(false)
             }
         }
     }
@@ -382,7 +389,7 @@ class OccurrenceFormViewModel @Inject constructor(
     private fun buildOccurrence(natureza: NaturezaOcorrencia): Ocorrencia {
         val state = _uiState.value
         val instant = parseDateTime("${state.data} ${state.hora}") ?: Instant.now()
-        
+
         return Ocorrencia(
             protocolo = state.protocolo,
             natureza = natureza,
@@ -404,138 +411,51 @@ class OccurrenceFormViewModel @Inject constructor(
     }
 
     // ============================================
-    // SISTEMA E PROCESSO OCR (INTELIGENTE & V4 COMPATIBLE)
+    // FUNÇÕES PÚBLICAS - OCR
     // ============================================
 
-    fun createPhotoUri(): Uri {
-        return cameraCaptureService.createPhotoUri()
-    }
-
-    fun scanDocumentOcr(imageUri: Uri, onResult: (OcrDocumentResult) -> Unit) {
-        logD("Iniciando escaneamento OCR simples: $imageUri")
-        setLoading(true)
-        
-        viewModelScope.launch {
-            ocrService.recognizeText(imageUri)
-                .onSuccess { rawResult ->
-                    logD("Texto bruto OCR reconhecido com sucesso. Processando com OCREngine.")
-                    
-                    // 1. Process with OCREngine
-                    val processedResult = ocrEngine.process(rawResult.rawText)
-                    
-                    // 2. Map OCREngine result to backward compatible OcrDocumentResult
-                    val mappedResult = mapOcrEngineResultToOcrDocumentResult(processedResult)
-                    
-                    setLoading(false)
-                    onResult(mappedResult)
-                }
-                .onFailure { error ->
-                    logE("Falha no escaneamento OCR simples", error)
-                    setError("OCR Error: ${error.localizedMessage}")
-                    setLoading(false)
-                }
-        }
-    }
-
-    fun checkAndProcessOcrImage(
-        imageUri: Uri,
-        onQualityIssue: (String) -> Unit,
-        onSuccess: (OcrDocumentResult, Uri) -> Unit
-    ) {
-        logD("Iniciando checkAndProcessOcrImage com verificação de qualidade: $imageUri")
-        setLoading(true)
-        
-        viewModelScope.launch {
-            try {
-                // 1. Validar imagem
-                val bitmap = validateImage(imageUri).getOrElse { error ->
-                    logE("Falha ao validar imagem para OCR", error)
-                    setError("Falha ao ler imagem: ${error.localizedMessage}")
-                    setLoading(false)
-                    return@launch
-                }
-                
-                // 2. Verificar qualidade
-                val quality = imageProcessingService.checkQuality(bitmap)
-                if (!quality.isValid) {
-                    logW("Qualidade inadequada detectada: ${quality.reason}")
-                    setLoading(false)
-                    onQualityIssue(quality.reason ?: "Baixa qualidade detectada na imagem.")
-                    return@launch
-                }
-                
-                // 3. Processar imagem (perspectiva, contraste, recortes)
-                val processedUri = processImage(bitmap).getOrElse { error ->
-                    logE("Falha no processamento de imagem (Filtros)", error)
-                    setError("Erro no processamento da imagem: ${error.localizedMessage}")
-                    setLoading(false)
-                    return@launch
-                }
-                
-                // 4. Executar OCR
-                val rawOcrResult = runOcr(processedUri).getOrElse { error ->
-                    logE("Falha no serviço de reconhecimento de texto OCR", error)
-                    setError("Erro no OCR: ${error.localizedMessage}")
-                    setLoading(false)
-                    return@launch
-                }
-                
-                // 5. Rodar motor inteligente de extração & classificação
-                val ocrEngineResult = ocrEngine.process(rawOcrResult.rawText)
-                val compatibleResult = mapOcrEngineResultToOcrDocumentResult(ocrEngineResult)
-                
-                logD("Processamento OCR completo. Tipo identificado: ${compatibleResult.tipo}")
-                setLoading(false)
-                onSuccess(compatibleResult, processedUri)
-                
-            } catch (e: Exception) {
-                logE("Erro geral no fluxo de validação e processamento OCR", e)
-                setError("Erro no fluxo OCR: ${e.localizedMessage}")
-                setLoading(false)
-            }
-        }
-    }
+    fun createPhotoUri(): Uri = cameraCaptureService.createPhotoUri()
 
     fun processAndRunOcrDirectly(
         imageUri: Uri,
         onSuccess: (OcrDocumentResult, Uri) -> Unit
     ) {
-        logD("Iniciando OCR direto (sem checagem de qualidade): $imageUri")
+        logD("Iniciando OCR direto: $imageUri")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
                 val bitmap = validateImage(imageUri).getOrElse { error ->
-                    logE("Falha na validação de imagem direta", error)
+                    logE("Falha na validação de imagem", error)
                     setError("Falha ao ler imagem: ${error.localizedMessage}")
                     setLoading(false)
                     return@launch
                 }
-                
+
                 val processedUri = processImage(bitmap).getOrElse { error ->
-                    logE("Falha ao processar filtros na imagem direta", error)
+                    logE("Falha ao processar imagem", error)
                     setError("Erro no processamento: ${error.localizedMessage}")
                     setLoading(false)
                     return@launch
                 }
-                
+
                 val rawOcrResult = runOcr(processedUri).getOrElse { error ->
-                    logE("Falha na leitura direta de OCR", error)
+                    logE("Falha no OCR", error)
                     setError("Erro no OCR: ${error.localizedMessage}")
                     setLoading(false)
                     return@launch
                 }
-                
+
                 val ocrEngineResult = ocrEngine.process(rawOcrResult.rawText)
                 val compatibleResult = mapOcrEngineResultToOcrDocumentResult(ocrEngineResult)
-                
-                logD("OCR direto finalizado com sucesso. Tipo: ${compatibleResult.tipo}")
+
+                logD("OCR finalizado. Tipo: ${compatibleResult.tipo}")
                 setLoading(false)
                 onSuccess(compatibleResult, processedUri)
-                
+
             } catch (e: Exception) {
-                logE("Erro no fluxo direto de processamento OCR", e)
-                setError("Erro no fluxo OCR direto: ${e.localizedMessage}")
+                logE("Erro no fluxo OCR", e)
+                setError("Erro no OCR: ${e.localizedMessage}")
                 setLoading(false)
             }
         }
@@ -543,20 +463,13 @@ class OccurrenceFormViewModel @Inject constructor(
 
     private suspend fun validateImage(uri: Uri): Result<Bitmap> {
         return try {
-            val fileSize = try {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
-            } catch (e: Exception) {
-                0L
-            }
-            
-            if (fileSize <= 0) {
-                return Result.failure(Exception("O arquivo de imagem está vazio ou não existe."))
-            }
-            
-            val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
-                BitmapFactory.decodeStream(stream)
-            } ?: return Result.failure(Exception("Falha ao decodificar imagem."))
-            
+            val fileSize = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
+            if (fileSize <= 0) return Result.failure(Exception("Arquivo vazio"))
+
+            val bitmap = context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it)
+            } ?: return Result.failure(Exception("Falha ao decodificar imagem"))
+
             Result.success(bitmap)
         } catch (e: Exception) {
             Result.failure(e)
@@ -566,23 +479,16 @@ class OccurrenceFormViewModel @Inject constructor(
     private suspend fun processImage(bitmap: Bitmap): Result<Uri> {
         return try {
             val processedBitmap = imageProcessingService.processDocumentImage(bitmap)
-            
-            val processedFile = java.io.File(
-                context.cacheDir,
-                "camera_capture_processed_${System.currentTimeMillis()}.jpg"
-            )
-            
-            java.io.FileOutputStream(processedFile).use { out ->
+            val file = java.io.File(context.cacheDir, "ocr_processed_${System.currentTimeMillis()}.jpg")
+            java.io.FileOutputStream(file).use { out ->
                 processedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
             }
-            
-            val processedUri = androidx.core.content.FileProvider.getUriForFile(
+            val uri = androidx.core.content.FileProvider.getUriForFile(
                 context,
                 "com.example.firenotes.fileprovider",
-                processedFile
+                file
             )
-            
-            Result.success(processedUri)
+            Result.success(uri)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -594,25 +500,18 @@ class OccurrenceFormViewModel @Inject constructor(
 
     private fun mapOcrEngineResultToOcrDocumentResult(result: OCREngine.OCRResult): OcrDocumentResult {
         val extractedFields = result.campos.toMutableMap()
-        
-        // Add compatibility mappings for the dialog UI
-        if (extractedFields.containsKey("data_nascimento")) {
-            extractedFields["nascimento"] = extractedFields["data_nascimento"] ?: ""
+
+        // Mapeamentos de compatibilidade
+        extractedFields["nascimento"] = extractedFields["data_nascimento"] ?: ""
+
+        val marca = extractedFields["marca"] ?: ""
+        val modelo = extractedFields["modelo"] ?: ""
+        val combined = "$marca $modelo".trim()
+        if (combined.isNotEmpty()) {
+            extractedFields["marca_modelo"] = combined
         }
-        
-        if (extractedFields.containsKey("marca") || extractedFields.containsKey("modelo")) {
-            val marca = extractedFields["marca"] ?: ""
-            val modelo = extractedFields["modelo"] ?: ""
-            val combined = "$marca $modelo".trim()
-            if (combined.isNotEmpty()) {
-                extractedFields["marca_modelo"] = combined
-            }
-        }
-        
-        if (extractedFields.containsKey("registro")) {
-            extractedFields["numero"] = extractedFields["registro"] ?: ""
-        }
-        
+        extractedFields["numero"] = extractedFields["registro"] ?: ""
+
         val fieldsWithConfidence = extractedFields.mapValues { (key, value) ->
             val origKey = when (key) {
                 "nascimento" -> "data_nascimento"
@@ -620,14 +519,13 @@ class OccurrenceFormViewModel @Inject constructor(
                 else -> key
             }
             val confidenceInt = result.confianca[origKey] ?: 70
-            val confidenceFloat = confidenceInt / 100.0f
             OcrField(
                 value = value,
-                confidence = confidenceFloat,
-                isPendingReview = confidenceFloat < 0.80f
+                confidence = confidenceInt / 100.0f,
+                isPendingReview = confidenceInt < 80
             )
         }
-        
+
         return OcrDocumentResult(
             tipo = result.tipo.name,
             rawText = result.textoOriginal,
@@ -637,7 +535,7 @@ class OccurrenceFormViewModel @Inject constructor(
     }
 
     // ============================================
-    // GESTÃO DE DOCUMENTOS E PESSOAS
+    // FUNÇÕES PÚBLICAS - DOCUMENTOS E PESSOAS
     // ============================================
 
     fun saveDocument(
@@ -650,52 +548,15 @@ class OccurrenceFormViewModel @Inject constructor(
         val occurrenceId = _uiState.value.id ?: return
         logD("Salvando documento: tipo=$tipo, numero=$numero")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
-                // 1. Criar/Atualizar pessoa vinculada ao documento
-                val nome = extractedFields["nome"] ?: "DESCONHECIDO"
-                val cpf = extractedFields["cpf"]
-                val rg = extractedFields["rg"]
-                val rgOrgaoEmissor = extractedFields["rg_orgao_emissor"]
-                val rgUf = extractedFields["rg_uf"]
-                val nascimento = extractedFields["nascimento"]
-                val naturalidade = extractedFields["naturalidade"]
-                val nacionalidade = extractedFields["nacionalidade"]
-                val filiacao = extractedFields["filiacao"]
-                val nomeSocial = extractedFields["nome_social"]
-
-                val pessoa = Pessoa(
-                    nome = nome,
-                    nomeSocial = nomeSocial,
-                    cpf = cpf,
-                    rg = rg,
-                    rgOrgaoEmissor = rgOrgaoEmissor,
-                    rgUf = rgUf,
-                    nascimento = nascimento,
-                    naturalidade = naturalidade,
-                    nacionalidade = nacionalidade,
-                    filiacao = filiacao
-                )
-
+                val pessoa = buildPessoaFromDocument(tipo, extractedFields)
                 val savedPessoa = repository.upsertPessoa(pessoa).getOrThrow()
-                logD("Pessoa vinculada salva/atualizada: ID=${savedPessoa.id}")
-                
-                // 2. Fazer upload da imagem associada se aplicável
-                val isLauncherResource = imageUri.toString().contains("ic_launcher_foreground")
-                val uploadResult = if (imageUri != Uri.EMPTY && !isLauncherResource) {
-                    val bytes = getFileBytes(imageUri).getOrThrow()
-                    val path = "$occurrenceId/documentos/${tipo}_${System.currentTimeMillis()}.png"
-                    val url = repository.uploadFile("ocorrencias", path, bytes).getOrThrow()
-                    val hash = java.util.UUID.nameUUIDFromBytes(bytes).toString()
-                    Result.success(url to hash)
-                } else {
-                    Result.success(null)
-                }
-                
-                val (url, hash) = uploadResult.getOrNull() ?: (null to null)
-                
-                // 3. Persistir metadados do documento
+                logD("Pessoa salva: ID=${savedPessoa.id}")
+
+                val (url, hash) = uploadDocumentImage(occurrenceId, tipo, imageUri)
+
                 val documento = Documento(
                     ocorrenciaId = occurrenceId,
                     pessoaId = savedPessoa.id,
@@ -708,10 +569,10 @@ class OccurrenceFormViewModel @Inject constructor(
                     dataUpload = Instant.now().toString(),
                     usuario = "Operador"
                 )
-                
+
                 val savedDoc = repository.addDocumento(documento).getOrThrow()
-                logPersistenceSuccess("Documento", "Salvo com sucesso: ID=${savedDoc.id}")
-                
+                logD("Documento salvo: ID=${savedDoc.id}")
+
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
@@ -719,40 +580,65 @@ class OccurrenceFormViewModel @Inject constructor(
                         pessoas = state.pessoas.filter { it.cpf != savedPessoa.cpf } + savedPessoa
                     )
                 }
-                
             } catch (e: Exception) {
-                logE("Erro ao salvar documento e associar pessoa", e)
+                logE("Erro ao salvar documento", e)
                 setError("Erro ao salvar documento: ${e.localizedMessage}")
                 setLoading(false)
             }
         }
     }
 
+    private fun buildPessoaFromDocument(tipo: String, fields: Map<String, String>): Pessoa {
+        return Pessoa(
+            nome = fields["nome"] ?: "DESCONHECIDO",
+            nomeSocial = fields["nome_social"],
+            cpf = fields["cpf"],
+            rg = fields["rg"],
+            rgOrgaoEmissor = fields["rg_orgao_emissor"],
+            rgUf = fields["rg_uf"],
+            nascimento = fields["nascimento"],
+            naturalidade = fields["naturalidade"],
+            nacionalidade = fields["nacionalidade"],
+            filiacao = fields["filiacao"]
+        )
+    }
+
+    private suspend fun uploadDocumentImage(
+        occurrenceId: String,
+        tipo: String,
+        imageUri: Uri
+    ): Pair<String?, String?> {
+        val isLauncherResource = imageUri.toString().contains("ic_launcher_foreground")
+        if (imageUri == Uri.EMPTY || isLauncherResource) return null to null
+
+        val bytes = getFileBytes(imageUri).getOrThrow()
+        val path = "$occurrenceId/documentos/${tipo}_${System.currentTimeMillis()}.png"
+        val url = repository.uploadFile("ocorrencias", path, bytes).getOrThrow()
+        val hash = UUID.nameUUIDFromBytes(bytes).toString()
+        return url to hash
+    }
+
     fun deleteDocumento(id: String) {
         logD("Deletando documento: $id")
         setLoading(true)
-        
+
         viewModelScope.launch {
             repository.deleteDocumento(id)
                 .onSuccess {
-                    logPersistenceSuccess("Documento", "Removido ID=$id")
                     _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            documentos = state.documentos.filter { it.id != id }
-                        )
+                        state.copy(isLoading = false, documentos = state.documentos.filter { it.id != id })
                     }
                 }
                 .onFailure { error ->
-                    logE("Erro ao remover documento do repositório", error)
-                    setError("Erro ao deletar documento: ${error.localizedMessage}")
+                    logE("Erro ao deletar documento", error)
+                    setError("Erro ao deletar: ${error.localizedMessage}")
                     setLoading(false)
                 }
         }
     }
 
     // ============================================
-    // GESTÃO DE VEÍCULOS
+    // FUNÇÕES PÚBLICAS - VEÍCULOS
     // ============================================
 
     fun saveVeiculo(
@@ -760,26 +646,24 @@ class OccurrenceFormViewModel @Inject constructor(
         modelo: String,
         cor: String,
         chassi: String,
-        ano: Int?,
+        ano: String,
         proprietarioId: String?,
         extractedFields: Map<String, String> = emptyMap(),
         rawText: String = "",
         imageUri: Uri? = null
     ) {
         val occurrenceId = _uiState.value.id ?: return
-        logD("Salvando veículo envolvido: placa=$placa, modelo=$modelo")
+        logD("Salvando veículo: placa=$placa, modelo=$modelo")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
-                var urlCrlv: String? = null
-                if (imageUri != null && imageUri != Uri.EMPTY) {
+                val urlCrlv = if (imageUri != null && imageUri != Uri.EMPTY) {
                     val bytes = getFileBytes(imageUri).getOrThrow()
                     val path = "$occurrenceId/veiculos/crlv_${System.currentTimeMillis()}.png"
-                    urlCrlv = repository.uploadFile("ocorrencias", path, bytes).getOrThrow()
-                    logD("Upload de imagem CRLV realizado com sucesso: $urlCrlv")
-                }
-                
+                    repository.uploadFile("ocorrencias", path, bytes).getOrThrow()
+                } else null
+
                 val veiculo = VeiculoEnvolvido(
                     ocorrenciaId = occurrenceId,
                     placa = placa,
@@ -789,33 +673,24 @@ class OccurrenceFormViewModel @Inject constructor(
                     ano = ano,
                     proprietarioId = proprietarioId,
                     renavam = extractedFields["renavam"],
-                    monobloco = extractedFields["chassi"],
-                    especie = extractedFields["especie"],
-                    tipoVeiculo = extractedFields["tipo_veiculo"],
-                    carroceria = extractedFields["carroceria"],
-                    marca = extractedFields["marca_modelo"] ?: extractedFields["marca"],
-                    versao = extractedFields["marca_modelo"] ?: extractedFields["versao"],
+                    marca = extractedFields["marca_modelo"] ?: extractedFields["marca"] ?: "",
+                    versao = extractedFields["marca_modelo"] ?: extractedFields["versao"] ?: "",
                     anoFabricacao = extractedFields["ano_fabricacao"]?.toIntOrNull(),
                     anoModelo = extractedFields["ano_modelo"]?.toIntOrNull(),
-                    categoriaVeiculo = extractedFields["categoria_veiculo"],
-                    exercicio = extractedFields["exercicio"],
+                    exercicio = extractedFields["exercicio"] ?: "",
                     urlCrlv = urlCrlv,
                     ocrTextoCrlv = rawText,
                     ocrDadosEstruturados = extractedFields
                 )
-                
+
                 val saved = repository.addVeiculoEnvolvido(veiculo).getOrThrow()
-                logPersistenceSuccess("Veículo", "Salvo ID=${saved.id}, placa=${saved.placa}")
-                
+                logD("Veículo salvo: ID=${saved.id}")
+
                 _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        veiculos = state.veiculos + saved
-                    )
+                    state.copy(isLoading = false, veiculos = state.veiculos + saved)
                 }
-                
             } catch (e: Exception) {
-                logE("Erro ao salvar veículo envolvido", e)
+                logE("Erro ao salvar veículo", e)
                 setError("Erro ao salvar veículo: ${e.localizedMessage}")
                 setLoading(false)
             }
@@ -823,89 +698,94 @@ class OccurrenceFormViewModel @Inject constructor(
     }
 
     fun deleteVeiculo(id: String) {
-        logD("Deletando veículo envolvido: $id")
+        logD("Deletando veículo: $id")
         setLoading(true)
-        
+
         viewModelScope.launch {
             repository.deleteVeiculo(id)
                 .onSuccess {
-                    logPersistenceSuccess("Veículo", "Removido ID=$id")
                     _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            veiculos = state.veiculos.filter { it.id != id }
-                        )
+                        state.copy(isLoading = false, veiculos = state.veiculos.filter { it.id != id })
                     }
                 }
                 .onFailure { error ->
-                    logE("Erro ao deletar veículo do repositório", error)
-                    setError("Erro ao deletar veículo: ${error.localizedMessage}")
+                    logE("Erro ao deletar veículo", error)
+                    setError("Erro ao deletar: ${error.localizedMessage}")
                     setLoading(false)
                 }
         }
     }
 
     // ============================================
-    // GESTÃO DE VÍTIMAS
+    // FUNÇÕES PÚBLICAS - VÍTIMAS
     // ============================================
 
     fun saveVitima(
         pessoaId: String,
         lesoes: String,
+        lesoesEstruturadas: List<com.example.firenotes.domain.model.Lesao>,
         destino: String,
         quemSocorreu: String,
         resultado: String,
+        viaturaSocorroId: String?,
+        hospitalDestino: String,
+        nomeMedico: String,
+        crmMedico: String,
         pulso: Int?,
         pa: String,
         satO2: Int?,
-        temp: Double?,
-        gcs: Int?,
-        viaturaSocorroId: String?,
-        hospitalDestino: String?,
-        transportadoPor: String?
+        aberturaOcular: Int?,
+        respostaVerbal: Int?,
+        respostaMotora: Int?,
+        respiracao: Int?
     ) {
         val occurrenceId = _uiState.value.id ?: return
         val person = _uiState.value.pessoas.find { it.id == pessoaId } ?: return
-        logD("Registrando nova vítima: ${person.nome}")
+        logD("Registrando vítima: ${person.nome}")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
                 val idade = calculateAge(person.nascimento)
-                
-                val vitima = Vitima(
+                // Calcular GCS total a partir dos sub-domínios
+                val gcsTotal = if (aberturaOcular != null && respostaVerbal != null && respostaMotora != null) {
+                    aberturaOcular + respostaVerbal + respostaMotora
+                } else null
+
+                val vitima = com.example.firenotes.domain.model.Vitima(
                     ocorrenciaId = occurrenceId,
                     nome = person.nome,
                     idade = idade,
-                    lesoesAparentes = lesoes,
+                    pessoaId = pessoaId,
+                    lesoes = lesoes,
+                    lesoesEstruturadas = lesoesEstruturadas,
                     destinoSocorro = destino,
                     quemSocorreu = quemSocorreu,
                     resultadoOcorrencia = resultado,
-                    sinaisVitais = SinaisVitais(
+                    viaturaSocorroId = viaturaSocorroId,
+                    hospitalDestino = hospitalDestino,
+                    nomeMedico = nomeMedico,
+                    crmMedico = crmMedico,
+                    sinaisVitais = com.example.firenotes.domain.model.SinaisVitais(
                         pulso = pulso,
                         pressaoArterial = pa,
                         saturacaoO2 = satO2,
-                        temperatura = temp,
-                        escalaGCS = gcs
-                    ),
-                    pessoaId = pessoaId,
-                    viaturaSocorroId = viaturaSocorroId,
-                    hospitalDestino = hospitalDestino,
-                    transportadoPor = transportadoPor
-                )
-                
-                val saved = repository.addVitima(vitima).getOrThrow()
-                logPersistenceSuccess("Vítima", "Salva ID=${saved.id}")
-                
-                _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        vitimas = state.vitimas + saved
+                        escalaGCS = gcsTotal,
+                        aberturaOcular = aberturaOcular,
+                        respostaVerbal = respostaVerbal,
+                        respostaMotora = respostaMotora,
+                        respiracao = respiracao
                     )
+                )
+
+                val saved = repository.addVitima(vitima).getOrThrow()
+                logD("Vítima salva: ID=${saved.id}")
+
+                _uiState.update { state ->
+                    state.copy(isLoading = false, vitimas = state.vitimas + saved)
                 }
-                
             } catch (e: Exception) {
-                logE("Erro ao registrar vítima envolvida", e)
+                logE("Erro ao registrar vítima", e)
                 setError("Erro ao registrar vítima: ${e.localizedMessage}")
                 setLoading(false)
             }
@@ -914,7 +794,7 @@ class OccurrenceFormViewModel @Inject constructor(
 
     fun calculateAge(birthDateStr: String?): Int? {
         if (birthDateStr.isNullOrBlank()) return null
-        
+
         return try {
             val parts = birthDateStr.split("/")
             val birthDate = if (parts.size == 3) {
@@ -924,13 +804,13 @@ class OccurrenceFormViewModel @Inject constructor(
             }
             java.time.Period.between(birthDate, LocalDate.now()).years
         } catch (e: Exception) {
-            logW("Erro ao calcular idade do formato: $birthDateStr")
+            logW("Erro ao calcular idade: $birthDateStr")
             null
         }
     }
 
     // ============================================
-    // GESTÃO DE VIATURAS E EQUIPES (MILITARES)
+    // FUNÇÕES PÚBLICAS - VIATURAS E MILITARES
     // ============================================
 
     fun addViatura(
@@ -942,131 +822,69 @@ class OccurrenceFormViewModel @Inject constructor(
         observacoes: String?,
         viaturaId: String? = null
     ) {
-        val occurrenceId = _uiState.value.id
-        if (occurrenceId == null) {
+        val occurrenceId = _uiState.value.id ?: run {
             setError("Ocorrência não salva. Salve a ocorrência primeiro.")
             return
         }
-        
+
         if (prefixo.isBlank()) {
             setError("O prefixo da viatura é obrigatório.")
             return
         }
-        
-        logD("Adicionando/Atualizando viatura: prefixo=$prefixo, tipo=$tipo")
+
+        logD("Adicionando viatura: prefixo=$prefixo")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
                 val finalViaturaId = viaturaId ?: UUID.randomUUID().toString()
-                val existingViatura = _uiState.value.viaturas.find { it.id == finalViaturaId }
-                
+                val existing = _uiState.value.viaturas.find { it.id == finalViaturaId }
+
                 val viatura = Viatura(
                     id = finalViaturaId,
                     ocorrenciaId = occurrenceId,
                     prefixo = prefixo,
                     tipo = tipo,
-                    unidade = unidade,
+                    unidade = unidade ?: "",
                     kmSaida = kmSaida,
                     kmLocal = kmLocal,
-                    observacoes = observacoes,
-                    equipe = existingViatura?.equipe ?: emptyList()
+                    observacoes = observacoes ?: "",
+                    equipe = existing?.equipe ?: emptyList()
                 )
-                
+
                 val saved = repository.addViatura(viatura).getOrThrow()
-                logPersistenceSuccess("Viatura", "Salva com sucesso: ID=${saved.id}")
-                
+                logD("Viatura salva: ID=${saved.id}")
+
                 _uiState.update { state ->
                     val updatedList = if (viaturaId != null) {
                         state.viaturas.map { if (it.id == viaturaId) saved else it }
                     } else {
                         state.viaturas + saved
                     }
-                    state.copy(
-                        isLoading = false,
-                        viaturas = updatedList
-                    )
+                    state.copy(isLoading = false, viaturas = updatedList)
                 }
             } catch (e: Exception) {
-                logE("Erro ao adicionar viatura operacional", e)
+                logE("Erro ao adicionar viatura", e)
                 setError("Erro ao adicionar viatura: ${e.localizedMessage}")
                 setLoading(false)
             }
         }
     }
 
-    fun salvarViaturaComMilitares(
-        prefixo: String,
-        tipo: String,
-        unidade: String?,
-        kmSaida: Int?,
-        kmLocal: Int?,
-        observacoes: String?,
-        militares: List<Militar>
-    ) {
-        val occurrenceId = _uiState.value.id
-        if (occurrenceId == null) {
-            setError("Ocorrência não foi salva. Salve a ocorrência primeiro.")
-            return
-        }
-        
-        if (prefixo.isBlank()) {
-            setError("O prefixo da viatura é obrigatório.")
-            return
-        }
-        
-        logD("🔄 Salvando viatura com ${militares.size} militares...")
-        setLoading(true)
-        
-        viewModelScope.launch {
-            try {
-                val viaturaId = UUID.randomUUID().toString()
-                val viatura = Viatura(
-                    id = viaturaId,
-                    ocorrenciaId = occurrenceId,
-                    prefixo = prefixo,
-                    tipo = tipo,
-                    unidade = unidade,
-                    kmSaida = kmSaida,
-                    kmLocal = kmLocal,
-                    observacoes = observacoes
-                )
-                
-                val saved = repository.salvarViaturaComMilitares(viatura, militares).getOrThrow()
-                logPersistenceSuccess("Viatura com Militares", "Salva com sucesso: ID=${saved.id}")
-                
-                _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        viaturas = state.viaturas + saved
-                    )
-                }
-            } catch (e: Exception) {
-                logE("Erro ao salvar viatura com militares", e)
-                setError("Erro ao salvar viatura: ${e.localizedMessage}")
-                setLoading(false)
-            }
-        }
-    }
-
     fun deleteViatura(viaturaId: String) {
-        logD("Deletando viatura operacional: $viaturaId")
+        logD("Deletando viatura: $viaturaId")
         setLoading(true)
-        
+
         viewModelScope.launch {
             repository.deleteViatura(viaturaId)
                 .onSuccess {
-                    logPersistenceSuccess("Viatura", "Removida ID=$viaturaId")
                     _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            viaturas = state.viaturas.filter { it.id != viaturaId }
-                        )
+                        state.copy(isLoading = false, viaturas = state.viaturas.filter { it.id != viaturaId })
                     }
                 }
                 .onFailure { error ->
-                    logE("Erro ao remover viatura do repositório", error)
-                    setError("Erro ao deletar viatura: ${error.localizedMessage}")
+                    logE("Erro ao deletar viatura", error)
+                    setError("Erro ao deletar: ${error.localizedMessage}")
                     setLoading(false)
                 }
         }
@@ -1083,65 +901,49 @@ class OccurrenceFormViewModel @Inject constructor(
             setError("RE e Nome de Guerra são obrigatórios.")
             return
         }
-        
+
         val viatura = _uiState.value.viaturas.find { it.id == viaturaId }
         if (viatura == null) {
-            logE("❌ Viatura não encontrada: $viaturaId")
-            logD("📋 Viaturas disponíveis: ${_uiState.value.viaturas.map { it.id }}")
-            setError("Viatura não encontrada. Por favor, adicione a viatura primeiro.")
+            setError("Viatura não encontrada. Adicione a viatura primeiro.")
             return
         }
-        
+
         if (viatura.ocorrenciaId.isBlank() || viatura.ocorrenciaId == "TEMP") {
-            logE("❌ Viatura com ocorrenciaId inválido: ${viatura.ocorrenciaId}")
             setError("Viatura não está vinculada a uma ocorrência. Salve a ocorrência primeiro.")
             return
         }
-        
-        logD("========================================")
-        logD("🔄 INICIANDO SALVAMENTO DE MILITAR")
-        logD("📋 RE: $re")
-        logD("📋 Nome: $nomeGuerra")
-        logD("📋 Viatura ID: $viaturaId")
-        logD("📋 Função: $funcao")
-        logD("========================================")
-        
+
+        logD("Adicionando militar: RE=$re, nome=$nomeGuerra")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
-                val graduacao = GraduacaoMilitar.fromDescricao(graduacaoStr)
-                val militarId = UUID.randomUUID().toString()
-                
                 val militar = Militar(
-                    id = militarId,
+                    id = UUID.randomUUID().toString(),
                     viaturaId = viaturaId,
                     re = re,
                     nomeGuerra = nomeGuerra,
-                    graduacao = graduacao,
-                    funcao = funcao
+                    graduacao = graduacaoStr,
+                    funcao = funcao ?: ""
                 )
-                
+
                 val saved = repository.addMilitar(militar).getOrThrow()
-                logPersistenceSuccess("Militar", "Salvo na equipe da viatura: ID=${saved.id}")
-                
+                logD("Militar salvo: ID=${saved.id}")
+
                 _uiState.update { state ->
                     val updatedViaturas = state.viaturas.map { v ->
                         if (v.id == viaturaId) {
                             val updatedEquipe = (v.equipe + saved)
-                                .sortedByDescending { it.graduacao.hierarquia }
+                                .sortedBy { it.graduacao.substringBefore(" - ").toIntOrNull() ?: 99 }
                             v.copy(equipe = updatedEquipe)
                         } else {
                             v
                         }
                     }
-                    state.copy(
-                        isLoading = false,
-                        viaturas = updatedViaturas
-                    )
+                    state.copy(isLoading = false, viaturas = updatedViaturas)
                 }
             } catch (e: Exception) {
-                logE("Erro ao registrar militar na equipe", e)
+                logE("Erro ao adicionar militar", e)
                 setError("Erro ao adicionar militar: ${e.localizedMessage}")
                 setLoading(false)
             }
@@ -1149,88 +951,88 @@ class OccurrenceFormViewModel @Inject constructor(
     }
 
     fun deleteMilitar(militarId: String, viaturaId: String) {
-        logD("Removendo militar da equipe: militarId=$militarId, viaturaId=$viaturaId")
+        logD("Removendo militar: $militarId")
         setLoading(true)
-        
+
         viewModelScope.launch {
             repository.deleteMilitar(militarId)
                 .onSuccess {
-                    logPersistenceSuccess("Militar", "Removido ID=$militarId")
                     _uiState.update { state ->
-                        val updatedViaturas = state.viaturas.map { viatura ->
-                            if (viatura.id == viaturaId) {
-                                viatura.copy(
-                                    equipe = viatura.equipe.filter { it.id != militarId }
-                                )
+                        val updated = state.viaturas.map { v ->
+                            if (v.id == viaturaId) {
+                                v.copy(equipe = v.equipe.filter { it.id != militarId })
                             } else {
-                                viatura
+                                v
                             }
                         }
-                        state.copy(
-                            isLoading = false,
-                            viaturas = updatedViaturas
-                        )
+                        state.copy(isLoading = false, viaturas = updated)
                     }
                 }
                 .onFailure { error ->
                     logE("Erro ao deletar militar", error)
-                    setError("Erro ao deletar militar: ${error.localizedMessage}")
+                    setError("Erro ao deletar: ${error.localizedMessage}")
                     setLoading(false)
                 }
         }
     }
 
     fun moveMilitar(militarId: String, currentViaturaId: String, newViaturaId: String) {
-        logD("Movendo militar ($militarId) de viatura: de=$currentViaturaId para=$newViaturaId")
+        logD("Movendo militar: $militarId de $currentViaturaId para $newViaturaId")
         setLoading(true)
-        
+
         viewModelScope.launch {
             repository.moveMilitar(militarId, newViaturaId)
                 .onSuccess {
                     val occurrenceId = _uiState.value.id ?: return@launch
                     repository.getViaturasDaOcorrencia(occurrenceId)
                         .onSuccess { list ->
-                            logPersistenceSuccess("Militar", "Movido com sucesso")
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    viaturas = list
-                                )
-                            }
+                            _uiState.update { it.copy(isLoading = false, viaturas = list) }
                         }
                         .onFailure { error ->
-                            logE("Militar movido mas falha ao recarregar viaturas", error)
-                            setError("Erro ao atualizar lista de viaturas: ${error.localizedMessage}")
+                            logE("Erro ao recarregar viaturas", error)
+                            setError("Erro ao atualizar lista: ${error.localizedMessage}")
                             setLoading(false)
                         }
                 }
                 .onFailure { error ->
-                    logE("Erro ao mover militar no repositório", error)
-                    setError("Erro ao mover militar: ${error.localizedMessage}")
+                    logE("Erro ao mover militar", error)
+                    setError("Erro ao mover: ${error.localizedMessage}")
                     setLoading(false)
                 }
         }
     }
 
     // ============================================
-    // GESTÃO DE APOIOS E MÍDIAS
+    // FUNÇÕES PÚBLICAS - APOIOS
     // ============================================
 
-    fun addApoio(orgao: OrgaoApoio, viatura: String, encarregado: String) {
+    fun addApoio(orgaoSigla: String, orgaoNome: String, viatura: String, encarregado: String, descricaoOutros: String) {
         val occurrenceId = _uiState.value.id ?: return
-        logD("Adicionando apoio à ocorrência: ${orgao.sigla}, viatura=$viatura")
-        
+        logD("Adicionando apoio: $orgaoSigla")
+
         viewModelScope.launch {
-            repository.vincularOrgaoApoioDetalhado(occurrenceId, orgao.id, viatura, encarregado)
+            val orgaos = repository.getOrgaosApoio().getOrDefault(emptyList())
+            val matched = orgaos.find { it.sigla == orgaoSigla }
+            val orgaoId = matched?.id ?: "orgao_outros"
+
+            repository.vincularOrgaoApoioDetalhado(occurrenceId, orgaoId, viatura, encarregado, descricaoOutros)
                 .onSuccess {
-                    logD("Órgão de apoio vinculado com sucesso")
-                    val newApoio = ApoioOcorrencia(orgao, viatura, encarregado)
+                    val newApoio = ApoioOcorrencia(
+                        id = UUID.randomUUID().toString(),
+                        ocorrenciaId = occurrenceId,
+                        orgaoId = orgaoId,
+                        orgaoSigla = orgaoSigla,
+                        orgaoNome = orgaoNome,
+                        viatura = viatura,
+                        encarregado = encarregado,
+                        descricaoOutros = descricaoOutros
+                    )
                     _uiState.update { state ->
                         state.copy(apoiosDetalhados = state.apoiosDetalhados + newApoio)
                     }
                 }
                 .onFailure { error ->
-                    logE("Erro ao vincular órgão de apoio detalhado", error)
+                    logE("Erro ao adicionar apoio", error)
                     setError("Erro ao adicionar apoio: ${error.localizedMessage}")
                 }
         }
@@ -1239,40 +1041,40 @@ class OccurrenceFormViewModel @Inject constructor(
     fun removeApoio(index: Int) {
         val occurrenceId = _uiState.value.id ?: return
         val apoio = _uiState.value.apoiosDetalhados.getOrNull(index) ?: return
-        logD("Removendo apoio da ocorrência: ${apoio.orgao.sigla}")
-        
+        logD("Removendo apoio: ${apoio.orgaoSigla}")
+
         viewModelScope.launch {
-            repository.desvincularOrgaoApoio(occurrenceId, apoio.orgao.id)
+            repository.desvincularOrgaoApoio(occurrenceId, apoio.orgaoId)
                 .onSuccess {
-                    logD("Órgão de apoio desvinculado com sucesso")
                     _uiState.update { state ->
-                        state.copy(
-                            apoiosDetalhados = state.apoiosDetalhados
-                                .filterIndexed { idx, _ -> idx != index }
-                        )
+                        state.copy(apoiosDetalhados = state.apoiosDetalhados.filterIndexed { idx, _ -> idx != index })
                     }
                 }
                 .onFailure { error ->
-                    logE("Erro ao desvincular apoio", error)
+                    logE("Erro ao remover apoio", error)
                     setError("Erro ao remover apoio: ${error.localizedMessage}")
                 }
         }
     }
 
+    // ============================================
+    // FUNÇÕES PÚBLICAS - MÍDIAS
+    // ============================================
+
     fun uploadOccurrenceFile(uri: Uri, isVideo: Boolean = false) {
         val occurrenceId = _uiState.value.id ?: return
-        logD("Iniciando upload de anexo de mídia: isVideo=$isVideo, URI=$uri")
+        logD("Upload de mídia: isVideo=$isVideo")
         setLoading(true)
-        
+
         viewModelScope.launch {
             getFileBytes(uri)
                 .onSuccess { bytes ->
                     val typeStr = if (isVideo) "video" else "foto"
                     val path = "$occurrenceId/imagens/${typeStr}_${System.currentTimeMillis()}.png"
-                    
+
                     repository.uploadFile("ocorrencias", path, bytes)
                         .onSuccess { publicUrl ->
-                            logD("Mídia enviada para o storage com sucesso: $publicUrl")
+                            logD("Upload concluído: $publicUrl")
                             _uiState.update { state ->
                                 if (isVideo) {
                                     state.copy(videos = state.videos + publicUrl, isLoading = false)
@@ -1282,13 +1084,13 @@ class OccurrenceFormViewModel @Inject constructor(
                             }
                         }
                         .onFailure { error ->
-                            logE("Erro no envio do binário da mídia", error)
+                            logE("Erro no upload", error)
                             setError("Erro upload: ${error.localizedMessage}")
                             setLoading(false)
                         }
                 }
                 .onFailure { error ->
-                    logE("Erro ao ler os bytes do URI da mídia", error)
+                    logE("Erro ao ler arquivo", error)
                     setError("Erro ao ler arquivo: ${error.localizedMessage}")
                     setLoading(false)
                 }
@@ -1296,52 +1098,45 @@ class OccurrenceFormViewModel @Inject constructor(
     }
 
     fun removeFoto(path: String) {
-        logD("Removendo foto da lista local da ocorrência: $path")
-        _uiState.update { state ->
-            state.copy(fotos = state.fotos.filter { it != path })
-        }
+        logD("Removendo foto: $path")
+        _uiState.update { state -> state.copy(fotos = state.fotos.filter { it != path }) }
         saveOccurrenceDraft()
     }
 
     // ============================================
-    // GESTÃO DE EVIDÊNCIAS (CUSTÓDIA)
+    // FUNÇÕES PÚBLICAS - EVIDÊNCIAS
     // ============================================
 
     fun addEvidencia(uri: Uri, classification: String) {
         val occurrenceId = _uiState.value.id ?: return
-        logD("Adicionando evidência classificada: $classification")
+        logD("Adicionando evidência: $classification")
         setLoading(true)
-        
+
         viewModelScope.launch {
             try {
                 val bytes = getFileBytes(uri).getOrThrow()
                 val path = "$occurrenceId/evidencias/evidence_${System.currentTimeMillis()}.jpg"
                 val url = repository.uploadFile("ocorrencias", path, bytes).getOrThrow()
-                logD("Arquivo de evidência enviado: $url")
-                
+
                 val ev = Evidencia(
                     ocorrenciaId = occurrenceId,
                     tipo = classification,
-                    hashSha256 = java.util.UUID.nameUUIDFromBytes(bytes).toString(),
+                    hashSha256 = UUID.nameUUIDFromBytes(bytes).toString(),
                     latitude = _uiState.value.latitude,
                     longitude = _uiState.value.longitude,
                     dataHora = Instant.now().toString(),
                     usuario = "Operador",
                     urlStorage = url
                 )
-                
+
                 val saved = repository.addEvidencia(ev).getOrThrow()
-                logPersistenceSuccess("Evidência", "Salva ID=${saved.id}")
-                
+                logD("Evidência salva: ID=${saved.id}")
+
                 _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        evidencias = state.evidencias + saved
-                    )
+                    state.copy(isLoading = false, evidencias = state.evidencias + saved)
                 }
-                
             } catch (e: Exception) {
-                logE("Erro ao registrar evidência", e)
+                logE("Erro ao adicionar evidência", e)
                 setError("Erro ao adicionar evidência: ${e.localizedMessage}")
                 setLoading(false)
             }
@@ -1349,40 +1144,36 @@ class OccurrenceFormViewModel @Inject constructor(
     }
 
     fun deleteEvidencia(id: String) {
-        logD("Deletando registro de evidência: $id")
+        logD("Deletando evidência: $id")
         setLoading(true)
-        
+
         viewModelScope.launch {
             repository.deleteEvidencia(id)
                 .onSuccess {
-                    logPersistenceSuccess("Evidência", "Removida ID=$id")
                     _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            evidencias = state.evidencias.filter { it.id != id }
-                        )
+                        state.copy(isLoading = false, evidencias = state.evidencias.filter { it.id != id })
                     }
                 }
                 .onFailure { error ->
-                    logE("Erro ao deletar evidência do repositório", error)
-                    setError("Erro ao deletar evidência: ${error.localizedMessage}")
+                    logE("Erro ao deletar evidência", error)
+                    setError("Erro ao deletar: ${error.localizedMessage}")
                     setLoading(false)
                 }
         }
     }
 
     // ============================================
-    // FINALIZAÇÃO E PERSISTÊNCIA DE RASCUNHO
+    // FUNÇÕES PÚBLICAS - FINALIZAÇÃO
     // ============================================
 
     fun finalizeOccurrence() {
         val occurrenceId = _uiState.value.id ?: return
-        val state = _uiState.value
-        logD("Solicitando finalização e fechamento da ocorrência: $occurrenceId")
+        logD("Finalizando ocorrência: $occurrenceId")
         _uiState.update { it.copy(isSaving = true, errorMessage = null) }
 
         viewModelScope.launch {
             try {
+                val state = _uiState.value
                 val occurrence = Ocorrencia(
                     id = occurrenceId,
                     protocolo = state.protocolo,
@@ -1401,32 +1192,16 @@ class OccurrenceFormViewModel @Inject constructor(
 
                 repository.createOcorrencia(occurrence)
                     .onSuccess {
-                        logD("Ocorrência finalizada e persistida localmente com sucesso")
-                        _uiState.update {
-                            it.copy(
-                                isSaving = false,
-                                isSavingSuccess = true
-                            )
-                        }
+                        logD("Ocorrência finalizada com sucesso")
+                        _uiState.update { it.copy(isSaving = false, isSavingSuccess = true, isSaved = true) }
                     }
                     .onFailure { error ->
-                        logE("Falha ao salvar versão final da ocorrência", error)
-                        // Mesmo que falhe, consideramos salvo porque os detalhes já estão em tabelas separadas do SQLite
-                        _uiState.update {
-                            it.copy(
-                                isSaving = false,
-                                isSavingSuccess = true
-                            )
-                        }
+                        logE("Falha ao finalizar", error)
+                        _uiState.update { it.copy(isSaving = false, isSavingSuccess = true, isSaved = true) }
                     }
             } catch (e: Exception) {
-                logE("Erro geral ao finalizar ocorrência", e)
-                _uiState.update {
-                    it.copy(
-                        isSaving = false,
-                        isSavingSuccess = true
-                    )
-                }
+                logE("Erro ao finalizar", e)
+                _uiState.update { it.copy(isSaving = false, isSavingSuccess = true, isSaved = true) }
             }
         }
     }
@@ -1434,11 +1209,11 @@ class OccurrenceFormViewModel @Inject constructor(
     fun saveOccurrenceDraft() {
         val occurrenceId = _uiState.value.id ?: return
         val state = _uiState.value
-        
+
         viewModelScope.launch {
             try {
                 val instant = parseDateTime("${state.data} ${state.hora}") ?: Instant.now()
-                
+
                 val occurrence = Ocorrencia(
                     id = occurrenceId,
                     protocolo = state.protocolo,
@@ -1454,22 +1229,18 @@ class OccurrenceFormViewModel @Inject constructor(
                     cidade = state.cidade,
                     uf = state.uf
                 )
-                
+
                 repository.createOcorrencia(occurrence)
-                    .onSuccess {
-                        logPersistenceSuccess("Ocorrência", "Rascunho atualizado ID=$occurrenceId")
-                    }
-                    .onFailure { error ->
-                        logPersistenceError("Ocorrência", "saveOccurrenceDraft", error)
-                    }
+                    .onSuccess { logD("Rascunho atualizado") }
+                    .onFailure { logE("Erro ao salvar rascunho", it) }
             } catch (e: Exception) {
-                logPersistenceError("Ocorrência", "saveOccurrenceDraftOuter", e)
+                logE("Erro ao salvar rascunho", e)
             }
         }
     }
 
     // ============================================
-    // UTILITÁRIOS AUXILIARES
+    // UTILITÁRIOS PRIVADOS
     // ============================================
 
     private fun setLoading(loading: Boolean) {
@@ -1478,7 +1249,7 @@ class OccurrenceFormViewModel @Inject constructor(
 
     private fun setError(message: String) {
         _uiState.update { it.copy(errorMessage = message) }
-        logW("Erro de UI definido: $message")
+        logW("Erro: $message")
     }
 
     private fun getFileBytes(uri: Uri): Result<ByteArray> {
@@ -1486,11 +1257,8 @@ class OccurrenceFormViewModel @Inject constructor(
             val inputStream = context.contentResolver.openInputStream(uri)
             val bytes = inputStream?.readBytes()
             inputStream?.close()
-            if (bytes != null) {
-                Result.success(bytes)
-            } else {
-                Result.failure(Exception("Nenhum dado lido do stream de entrada."))
-            }
+            if (bytes != null) Result.success(bytes)
+            else Result.failure(Exception("Nenhum dado lido"))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1502,7 +1270,7 @@ class OccurrenceFormViewModel @Inject constructor(
             val localDateTime = LocalDateTime.parse(dateTimeStr, formatter)
             localDateTime.atZone(ZoneId.systemDefault()).toInstant()
         } catch (e: Exception) {
-            logW("Erro ao formatar string de data/hora: $dateTimeStr")
+            logW("Erro ao parsear data/hora: $dateTimeStr")
             null
         }
     }
@@ -1511,31 +1279,18 @@ class OccurrenceFormViewModel @Inject constructor(
         return try {
             val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
             LocalDateTime.ofInstant(instant, ZoneId.systemDefault()).format(formatter)
-        } catch (e: Exception) {
-            ""
-        }
+        } catch (e: Exception) { "" }
     }
 
     private fun formatTime(instant: Instant): String {
         return try {
             val formatter = DateTimeFormatter.ofPattern("HH:mm")
             LocalDateTime.ofInstant(instant, ZoneId.systemDefault()).format(formatter)
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    private fun logPersistenceSuccess(tag: String, message: String) {
-        android.util.Log.d("FireNotes", "Persistência - $tag: $message")
-    }
-
-    private fun logPersistenceError(tag: String, method: String, error: Throwable) {
-        val stackTraceStr = android.util.Log.getStackTraceString(error)
-        android.util.Log.e("FireNotes", "Persistência - ERRO em $method [${error.javaClass.simpleName}]: ${error.message}\n$stackTraceStr")
+        } catch (e: Exception) { "" }
     }
 
     override fun onCleared() {
         super.onCleared()
-        logD("ViewModel finalizado (onCleared)")
+        logD("ViewModel finalizado")
     }
 }

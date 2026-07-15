@@ -20,32 +20,33 @@ data class VeiculoMaster(
 data class VeiculoEnvolvido(
     val id: String? = null,
     val ocorrenciaId: String,
-    val veiculoMasterId: String? = null, // V4 Master vehicle reference
-    val condutorId: String? = null,      // V4 Condutor reference
+    val placa: String = "",                    // Formatado Mercosul
+    val modelo: String = "",
+    val cor: String = "",
+    val chassi: String = "",
+    val anoFabricacao: Int? = null,            // mantido para veículos antigos
+    val anoModelo: Int? = null,                // mantido para veículos antigos
+    val ano: String = "",                      // "2024/2025" - formato exibição
+    val proprietarioId: String? = null,        // Referência à Pessoa
     
-    val placa: String?,
-    val cor: String?,
-    val chassi: String?,
-    val modelo: String?,
-    val ano: Int?,
+    // Campos OCR do CRLV (mantidos para referência)
+    val marca: String = "",
+    val versao: String = "",
+    val exercicio: String = "",
+    val urlCrlv: String? = null,
+    val ocrTextoCrlv: String? = null,
+    val ocrDadosEstruturados: Map<String, String> = emptyMap(),
+
+    // Database compatibility fields
+    val veiculoMasterId: String? = null,
+    val condutorId: String? = null,
     val dadosMotorista: Motorista? = null,
-    
-    // V2 CRLV and Owner fields
-    val proprietarioId: String? = null,
     val renavam: String? = null,
     val monobloco: String? = null,
     val especie: String? = null,
     val tipoVeiculo: String? = null,
     val carroceria: String? = null,
-    val marca: String? = null,
-    val versao: String? = null,
-    val anoFabricacao: Int? = null,
-    val anoModelo: Int? = null,
-    val categoriaVeiculo: String? = null,
-    val exercicio: String? = null,
-    val urlCrlv: String? = null,
-    val ocrTextoCrlv: String? = null,
-    val ocrDadosEstruturados: Map<String, String> = emptyMap()
+    val categoriaVeiculo: String? = null
 )
 
 data class Motorista(
