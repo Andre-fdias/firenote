@@ -190,6 +190,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     },
                                     onNavigateToAgenda = { date ->
                                         navController.navigate(Screen.Agenda.createRoute(date))
+                                    },
+                                    onNavigateToConsult = {
+                                        navController.navigate(Screen.Consult.route)
                                     }
                                 )
                             }

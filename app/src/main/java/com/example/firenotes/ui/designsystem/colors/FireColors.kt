@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.Color
 
 object FireColors {
     // Light values
-    private val lightPrimary = Color(0xFF1A73E8)      // Azul principal
+    private val lightPrimary = Color(0xFF1A73E8)      // Azul principal original
     private val lightPrimaryLight = Color(0xFFE8F0FE)
     private val lightPrimaryDark = Color(0xFF1557B0)
     private val lightSecondary = Color(0xFF34A853)    // Verde
@@ -25,7 +25,7 @@ object FireColors {
     private val lightOnBackground = Color(0xFF202124)
     private val lightOnSurface = Color(0xFF3C4043)
     private val lightOnSurfaceVariant = Color(0xFF5F6368)
-
+ 
     // Dark values
     private val darkPrimary = Color(0xFF8AB4F8)
     private val darkPrimaryLight = Color(0xFF185ABC)

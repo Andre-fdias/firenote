@@ -19,9 +19,7 @@ class DataStoreSettingsRepository @Inject constructor(
         val KEY_PIN_CODE = stringPreferencesKey("pin_code")
         val KEY_BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
         
-        val KEY_LAST_CITY = stringPreferencesKey("ultima_cidade")
-        val KEY_LAST_TEMP = stringPreferencesKey("ultima_temperatura")
-        val KEY_LAST_UPDATE = longPreferencesKey("ultima_atualizacao")
+
         
         val KEY_LANGUAGE = stringPreferencesKey("idioma")
         val KEY_DATE_FORMAT = stringPreferencesKey("formato_data")
@@ -44,17 +42,7 @@ class DataStoreSettingsRepository @Inject constructor(
         preferences[KEY_BIOMETRIC_ENABLED] ?: false
     }
 
-    override val lastCityFlow: Flow<String> = dataStore.data.map { preferences ->
-        preferences[KEY_LAST_CITY] ?: "Sorocaba/SP"
-    }
 
-    override val lastTempFlow: Flow<String> = dataStore.data.map { preferences ->
-        preferences[KEY_LAST_TEMP] ?: "24°C"
-    }
-
-    override val lastUpdateFlow: Flow<Long> = dataStore.data.map { preferences ->
-        preferences[KEY_LAST_UPDATE] ?: 0L
-    }
 
     override val languageFlow: Flow<String> = dataStore.data.map { preferences ->
         preferences[KEY_LANGUAGE] ?: "Português (BR)"
@@ -92,14 +80,7 @@ class DataStoreSettingsRepository @Inject constructor(
         }
     }
 
-    override suspend fun saveWeatherCache(city: String, temp: String, timestamp: Long) {
-        android.util.Log.d("FireTheme", "DataStore - Salvando cache de Clima: Cidade=$city, Temp=$temp, Timestamp=$timestamp")
-        dataStore.edit { preferences ->
-            preferences[KEY_LAST_CITY] = city
-            preferences[KEY_LAST_TEMP] = temp
-            preferences[KEY_LAST_UPDATE] = timestamp
-        }
-    }
+
 
     override suspend fun setLanguage(language: String) {
         dataStore.edit { preferences ->

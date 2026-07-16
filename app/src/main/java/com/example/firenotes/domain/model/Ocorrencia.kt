@@ -36,7 +36,8 @@ data class Ocorrencia(
     val vitimas: List<Vitima> = emptyList(),
     val orgaosApoio: List<OrgaoApoio> = emptyList(),
     val apoiosDetalhados: List<ApoioOcorrencia> = emptyList(),
-    val viaturas: List<Viatura> = emptyList() // V3 Viaturas linked to the occurrence
+    val viaturas: List<Viatura> = emptyList(), // V3 Viaturas linked to the occurrence
+    val status: String = "ABERTA"
 )
 
 data class ApoioOcorrencia(

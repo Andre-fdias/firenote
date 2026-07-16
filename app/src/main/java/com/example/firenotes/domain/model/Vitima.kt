@@ -74,6 +74,7 @@ data class Vitima(
     val nomeMedico: String = "",
     val crmMedico: String = "",
     val sinaisVitais: SinaisVitais = SinaisVitais(),
+    val cpf: String? = null,
 
     // Database compatibility fields
     val lesoesAparentes: String? = null,

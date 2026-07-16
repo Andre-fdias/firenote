@@ -22,6 +22,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.window.Dialog
 import com.example.firenotes.domain.model.*
@@ -43,6 +47,7 @@ import com.example.firenotes.ui.designsystem.states.FireEmptyState
 import com.example.firenotes.ui.designsystem.states.FireErrorState
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.example.firenotes.ui.designsystem.components.inputs.FireDatePicker
 
 // ============================================
 // LOGS PADRONIZADOS
@@ -63,7 +68,32 @@ fun ConsultScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     var showFilterSheet by remember { mutableStateOf(false) }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            try {
+                context.contentResolver.openInputStream(it)?.bufferedReader()?.use { reader ->
+                    val jsonStr = reader.readText()
+                    viewModel.importOccurrenceFromJson(
+                        jsonStr = jsonStr,
+                        onSuccess = {
+                            Toast.makeText(context, "Ocorrência importada com sucesso!", Toast.LENGTH_SHORT).show()
+                            viewModel.loadOccurrences()
+                        },
+                        onError = { err ->
+                            Toast.makeText(context, "Erro na importação: $err", Toast.LENGTH_LONG).show()
+                        }
+                    )
+                }
+            } catch (e: java.lang.Exception) {
+                Toast.makeText(context, "Erro ao ler arquivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     // Check if there are active filters
     val hasActiveFilters = uiState.filters.talao.isNotBlank() ||
@@ -85,7 +115,12 @@ fun ConsultScreen(
                 backgroundColor = FireColors.Surface,
                 elevation = 2.dp,
                 actions = {
-                    // Botão de filtros com badge de notificação de filtros ativos
+                    FireIconButton(
+                        icon = FireIcons.CloudDownload,
+                        onClick = {
+                            importLauncher.launch("application/json")
+                        }
+                    )
                     BadgedBox(
                         badge = {
                             if (hasActiveFilters) {
@@ -169,15 +204,49 @@ fun ConsultScreen(
 
                 var sortExpanded by remember { mutableStateOf(false) }
                 Box {
-                    FireOutlinedButton(
-                        text = when (uiState.sortBy) {
-                            ConsultSort.RECENTES -> "📅 Mais Recentes"
-                            ConsultSort.ANTIGAS -> "📅 Mais Antigas"
-                            ConsultSort.TALAO -> "🔢 Talão"
-                            ConsultSort.VITIMAS -> "👥 Vítimas"
-                            ConsultSort.VEICULOS -> "🚗 Veículos"
+                    AssistChip(
+                        onClick = { sortExpanded = true },
+                        label = {
+                            Text(
+                                text = when (uiState.sortBy) {
+                                    ConsultSort.RECENTES -> "Mais Recentes"
+                                    ConsultSort.ANTIGAS -> "Mais Antigas"
+                                    ConsultSort.TALAO -> "Talão"
+                                    ConsultSort.VITIMAS -> "Vítimas"
+                                    ConsultSort.VEICULOS -> "Veículos"
+                                },
+                                fontSize = 12.sp
+                            )
                         },
-                        onClick = { sortExpanded = true }
+                        leadingIcon = {
+                            Icon(
+                                imageVector = when (uiState.sortBy) {
+                                    ConsultSort.RECENTES -> FireIcons.Schedule
+                                    ConsultSort.ANTIGAS -> FireIcons.Schedule
+                                    ConsultSort.TALAO -> FireIcons.Numbers
+                                    ConsultSort.VITIMAS -> FireIcons.People
+                                    ConsultSort.VEICULOS -> FireIcons.DirectionsCar
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = FireColors.Primary
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                imageVector = FireIcons.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            FireColors.OnSurfaceVariant.copy(alpha = 0.2f)
+                        ),
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = Color.Transparent,
+                            labelColor = FireColors.OnBackground
+                        )
                     )
                     DropdownMenu(
                         expanded = sortExpanded,
@@ -294,6 +363,7 @@ fun ConsultScreen(
     if (showFilterSheet) {
         FiltersDialog(
             currentFilters = uiState.filters,
+            occurrences = uiState.occurrences,
             onDismiss = { showFilterSheet = false },
             onApply = { filters ->
                 logD("Applying filters: $filters")
@@ -567,188 +637,347 @@ private fun StatPill(
 @Composable
 fun FiltersDialog(
     currentFilters: ConsultFilters,
+    occurrences: List<Ocorrencia>,
     onDismiss: () -> Unit,
     onApply: (ConsultFilters) -> Unit,
     onClear: () -> Unit
 ) {
-    var talao by remember { mutableStateOf(currentFilters.talao) }
+    var dataFiltro by remember { mutableStateOf(currentFilters.dataFiltro) }
     var cidade by remember { mutableStateOf(currentFilters.cidade) }
     var bairro by remember { mutableStateOf(currentFilters.bairro) }
     var viatura by remember { mutableStateOf(currentFilters.viatura) }
     var militar by remember { mutableStateOf(currentFilters.militar) }
     var placa by remember { mutableStateOf(currentFilters.placa) }
-    var nome by remember { mutableStateOf(currentFilters.nome) }
-    var hospital by remember { mutableStateOf(currentFilters.hospital) }
+    var envolvido by remember { mutableStateOf(currentFilters.envolvido) }
     var selectedNature by remember { mutableStateOf(currentFilters.natureza) }
     var selectedStatus by remember { mutableStateOf(currentFilters.status) }
 
+    // Limpa o bairro se a cidade for alterada
+    LaunchedEffect(cidade) {
+        if (cidade.isBlank()) {
+            bairro = ""
+        }
+    }
+
+    val naturezasCadastradas = remember(occurrences) {
+        occurrences.map { it.natureza }.distinct()
+    }
+    val cidadesCadastradas = remember(occurrences) {
+        occurrences.mapNotNull { it.cidade }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val bairrosCadastrados = remember(occurrences, cidade) {
+        if (cidade.isBlank()) emptyList()
+        else occurrences.filter { it.cidade?.equals(cidade, ignoreCase = true) == true }
+            .mapNotNull { it.bairro }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val viaturasCadastradas = remember(occurrences) {
+        occurrences.flatMap { it.viaturas }.map { it.prefixo }.distinct().sorted()
+    }
+    val placasCadastradas = remember(occurrences) {
+        occurrences.flatMap { it.veiculos }.mapNotNull { it.placa }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+
     val activeFiltersCount = listOf(
-        talao, cidade, bairro, viatura, militar, placa, nome, hospital, selectedNature?.let { "nature" }
+        dataFiltro, cidade, bairro, viatura, militar, placa, envolvido, selectedNature?.let { "nature" }, selectedStatus
     ).count { it != null && it != "" }
 
-    FireDialog(
-        onDismissRequest = onDismiss,
-        title = "🔍 Filtros Avançados",
-        confirmButton = {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFFFAFAFA), // Fundo em tons de branco
+            shadowElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 24.dp)
+        ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth()
             ) {
+                // Cabeçalho: Título e Botão Cancelar (X) no canto superior direito
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FireButton(
-                        text = "Aplicar ($activeFiltersCount)",
+                    Text(
+                        text = "🔍 Filtros Avançados",
+                        style = FireTypography.Title,
+                        fontWeight = FontWeight.Bold,
+                        color = FireColors.OnBackground
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = FireIcons.Close,
+                            contentDescription = "Fechar",
+                            tint = FireColors.OnSurfaceVariant
+                        )
+                    }
+                }
+                
+                Divider(
+                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.1f),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                
+                // Filtros (Corpo)
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+                ) {
+                    Text("Status:", style = FireTypography.Label, fontWeight = FontWeight.Bold)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf("Todas", "Aberta", "Encerrada").forEach { status ->
+                            val isSelected = (status == "Todas" && selectedStatus.isEmpty()) || (selectedStatus == status)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    selectedStatus = if (status == "Todas") "" else status
+                                },
+                                label = status
+                            )
+                        }
+                    }
+
+                    FireDatePicker(
+                        value = dataFiltro,
+                        onDateSelected = { dataFiltro = it },
+                        label = "📅 Data da Ocorrência"
+                    )
+
+                    NatureDropdownSelect(
+                        label = "🏷️ Natureza",
+                        selectedValue = selectedNature,
+                        options = naturezasCadastradas,
+                        onValueChange = { selectedNature = it }
+                    )
+
+                    FilterDropdownSelect(
+                        label = "📍 Cidade",
+                        selectedValue = cidade,
+                        options = cidadesCadastradas,
+                        onValueChange = {
+                            cidade = it
+                            bairro = "" // Reset bairro ao mudar cidade
+                        }
+                    )
+
+                    if (cidade.isNotBlank()) {
+                        FilterDropdownSelect(
+                            label = "🏘️ Bairro",
+                            selectedValue = bairro,
+                            options = bairrosCadastrados,
+                            onValueChange = { bairro = it }
+                        )
+                    }
+
+                    FilterDropdownSelect(
+                        label = "🚒 Prefixo Viatura",
+                        selectedValue = viatura,
+                        options = viaturasCadastradas,
+                        onValueChange = { viatura = it }
+                    )
+
+                    FireOutlinedTextField(
+                        value = militar,
+                        onValueChange = { militar = it },
+                        label = "👨‍🚒 RE do Militar",
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    FilterDropdownSelect(
+                        label = "🚗 Placa Veículo",
+                        selectedValue = placa,
+                        options = placasCadastradas,
+                        onValueChange = { placa = it }
+                    )
+
+                    FireOutlinedTextField(
+                        value = envolvido,
+                        onValueChange = { envolvido = it },
+                        label = "👤 Envolvido (Nome ou CPF)",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Rodapé: Botões de ação unificados em azul
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            dataFiltro = ""
+                            cidade = ""
+                            bairro = ""
+                            viatura = ""
+                            militar = ""
+                            placa = ""
+                            envolvido = ""
+                            selectedNature = null
+                            selectedStatus = ""
+                        },
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FireColors.Primary),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = FireColors.Primary),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(imageVector = FireIcons.Refresh, contentDescription = "Limpar", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Limpar", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+
+                    Button(
                         onClick = {
                             onApply(
                                 ConsultFilters(
-                                    talao = talao,
+                                    dataFiltro = dataFiltro,
                                     cidade = cidade,
                                     bairro = bairro,
                                     viatura = viatura,
                                     militar = militar,
                                     placa = placa,
-                                    nome = nome,
-                                    hospital = hospital,
+                                    envolvido = envolvido,
                                     natureza = selectedNature,
                                     status = selectedStatus
                                 )
                             )
                         },
+                        colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary),
                         modifier = Modifier.weight(1f)
-                    )
-                    FireTextButton(
-                        text = "Limpar",
-                        onClick = onClear,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                FireTextButton(
-                    text = "Cancelar",
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-        ) {
-            Text("Status:", style = FireTypography.Label, fontWeight = FontWeight.Bold)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                listOf("Todas", "Aberta", "Encerrada").forEach { status ->
-                    val isSelected = (status == "Todas" && selectedStatus.isEmpty()) || (selectedStatus == status)
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            selectedStatus = if (status == "Todas") "" else status
-                        },
-                        label = status
-                    )
-                }
-            }
-
-            Text("Natureza:", style = FireTypography.Label, fontWeight = FontWeight.Bold)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                var expanded by remember { mutableStateOf(false) }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    FireOutlinedButton(
-                        text = selectedNature?.descricao ?: "Todas",
-                        onClick = { expanded = true },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                        modifier = Modifier.background(FireColors.Surface)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Todas", style = FireTypography.Body) },
-                            onClick = { selectedNature = null; expanded = false }
-                        )
-                        NaturezaOcorrencia.values().forEach { n ->
-                            DropdownMenuItem(
-                                text = { Text(n.descricao, style = FireTypography.Body) },
-                                onClick = { selectedNature = n; expanded = false }
-                            )
-                        }
+                        Icon(imageVector = FireIcons.Check, contentDescription = "Aplicar", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Aplicar ($activeFiltersCount)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
-
-            FireOutlinedTextField(
-                value = talao,
-                onValueChange = { talao = it },
-                label = "📋 Talão",
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FireOutlinedTextField(
-                value = cidade,
-                onValueChange = { cidade = it },
-                label = "📍 Cidade",
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FireOutlinedTextField(
-                value = bairro,
-                onValueChange = { bairro = it },
-                label = "🏘️ Bairro",
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FireOutlinedTextField(
-                value = viatura,
-                onValueChange = { viatura = it },
-                label = "🚒 Prefixo Viatura",
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FireOutlinedTextField(
-                value = militar,
-                onValueChange = { militar = it },
-                label = "👨‍🚒 Militar (Nome/RE)",
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FireOutlinedTextField(
-                value = placa,
-                onValueChange = { placa = it },
-                label = "🚗 Placa Veículo",
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FireOutlinedTextField(
-                value = nome,
-                onValueChange = { nome = it },
-                label = "👤 Nome da Vítima",
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            FireOutlinedTextField(
-                value = hospital,
-                onValueChange = { hospital = it },
-                label = "🏥 Hospital de Destino",
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }
 
-// ============================================
-// FILTER CHIP
-// ============================================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FilterDropdownSelect(
+    label: String,
+    selectedValue: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(text = label, style = FireTypography.Label, fontWeight = FontWeight.Bold, color = FireColors.OnSurfaceVariant)
+        Spacer(modifier = Modifier.height(4.dp))
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded }
+        ) {
+            OutlinedTextField(
+                readOnly = true,
+                value = selectedValue.ifBlank { "Todas" },
+                onValueChange = {},
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = FireColors.Primary,
+                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.4f),
+                    focusedLabelColor = FireColors.Primary,
+                    focusedTextColor = FireColors.OnBackground,
+                    unfocusedTextColor = FireColors.OnBackground,
+                    focusedContainerColor = FireColors.Surface,
+                    unfocusedContainerColor = FireColors.Surface
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor()
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(FireColors.Surface)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Todas / Limpar", style = FireTypography.Body) },
+                    onClick = { onValueChange(""); expanded = false }
+                )
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option, style = FireTypography.Body) },
+                        onClick = { onValueChange(option); expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NatureDropdownSelect(
+    label: String,
+    selectedValue: NaturezaOcorrencia?,
+    options: List<NaturezaOcorrencia>,
+    onValueChange: (NaturezaOcorrencia?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(text = label, style = FireTypography.Label, fontWeight = FontWeight.Bold, color = FireColors.OnSurfaceVariant)
+        Spacer(modifier = Modifier.height(4.dp))
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded }
+        ) {
+            OutlinedTextField(
+                readOnly = true,
+                value = selectedValue?.descricao ?: "Todas",
+                onValueChange = {},
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = FireColors.Primary,
+                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.4f),
+                    focusedLabelColor = FireColors.Primary,
+                    focusedTextColor = FireColors.OnBackground,
+                    unfocusedTextColor = FireColors.OnBackground,
+                    focusedContainerColor = FireColors.Surface,
+                    unfocusedContainerColor = FireColors.Surface
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor()
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(FireColors.Surface)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Todas / Limpar", style = FireTypography.Body) },
+                    onClick = { onValueChange(null); expanded = false }
+                )
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.descricao, style = FireTypography.Body) },
+                        onClick = { onValueChange(option); expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun FilterChip(

@@ -5,11 +5,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.firenotes.domain.model.Ocorrencia
-import com.example.firenotes.domain.model.WeatherInfo
 import com.example.firenotes.domain.repository.OcorrenciaRepository
 import com.example.firenotes.domain.repository.LocationService
 import com.example.firenotes.domain.repository.SettingsRepository
-import com.example.firenotes.domain.repository.WeatherService
 import com.example.firenotes.data.local.dao.HomeOperationalDao
 import com.example.firenotes.data.local.entities.RoomTarefa
 import com.example.firenotes.data.local.entities.RoomEventoAgenda
@@ -42,7 +40,6 @@ sealed interface HomeUiState {
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val weatherService: WeatherService,
     private val locationService: LocationService,
     private val repository: OcorrenciaRepository,
     private val settingsRepository: SettingsRepository,
@@ -59,15 +56,7 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    // ============================================
-    // UI STATES - CLIMA
-    // ============================================
 
-    private val _weatherState = MutableStateFlow(WeatherUiState())
-    val weatherState: StateFlow<WeatherUiState> = _weatherState.asStateFlow()
-
-    private val _isLoadingWeather = MutableStateFlow(false)
-    val isLoadingWeather: StateFlow<Boolean> = _isLoadingWeather.asStateFlow()
 
     // ============================================
     // UI STATES - REFRESH
@@ -99,12 +88,7 @@ class HomeViewModel @Inject constructor(
     private val _allProntidoes = MutableStateFlow<List<RoomProntidaoDia>>(emptyList())
     val allProntidoes: StateFlow<List<RoomProntidaoDia>> = _allProntidoes.asStateFlow()
 
-    // ============================================
-    // CONSTANTES DE CACHE
-    // ============================================
 
-    private var lastWeatherFetchTime = 0L
-    private val WEATHER_CACHE_DURATION = 5 * 60 * 1000L // 5 minutos
 
     // ============================================
     // INICIALIZAÇÃO
@@ -114,7 +98,6 @@ class HomeViewModel @Inject constructor(
         Log.d(TAG, "🚀 Inicializando HomeViewModel")
         loadOccurrences()
         triggerAutoBackups()
-        loadWeather()
         observeHomeData()
     }
 
@@ -320,7 +303,6 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _isRefreshing.value = true
             loadOccurrences()
-            loadWeather(forceRefresh = true)
             kotlinx.coroutines.delay(1000)
             _isRefreshing.value = false
             Log.d(TAG, "✅ Refresh completo")
@@ -350,132 +332,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    // ============================================
-    // CARREGAMENTO DE CLIMA
-    // ============================================
 
-    fun loadWeather(forceRefresh: Boolean = false) {
-        val now = System.currentTimeMillis()
-
-        if (!forceRefresh && now - lastWeatherFetchTime < WEATHER_CACHE_DURATION) {
-            Log.d(TAG, "⏳ Usando cache de clima (${(now - lastWeatherFetchTime) / 1000}s atrás)")
-            return
-        }
-
-        Log.d(TAG, "🌤️ Carregando clima... (forceRefresh=$forceRefresh)")
-
-        viewModelScope.launch {
-            _isLoadingWeather.value = true
-            lastWeatherFetchTime = now
-
-            try {
-                // 1. Tentar cache primeiro
-                val cached = weatherService.getCachedWeather()
-                if (cached != null && !forceRefresh) {
-                    Log.d(TAG, "✅ Cache carregado: ${cached.city}")
-                    _weatherState.value = WeatherUiState.fromWeatherInfo(cached)
-                }
-
-                // 2. Tentar localização
-                val locationResult = locationService.getCurrentLocation()
-                locationResult.onSuccess { (lat, lon) ->
-                    Log.d(TAG, "📍 Localização obtida: lat=$lat, lon=$lon")
-                    fetchWeather(lat, lon)
-                }.onFailure { error ->
-                    Log.e(TAG, "❌ Erro ao obter localização: ${error.message}")
-
-                    // 3. Tentar usar última cidade salva
-                    val lastCity = settingsRepository.lastCityFlow.first()
-                    if (lastCity.isNotBlank()) {
-                        Log.d(TAG, "📍 Usando última cidade: $lastCity")
-                        fetchWeatherByCity(lastCity)
-                    } else {
-                        // 4. Fallback para dados mockados
-                        useMockWeather()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao carregar clima: ${e.message}", e)
-                useMockWeather()
-            } finally {
-                _isLoadingWeather.value = false
-            }
-        }
-    }
-
-    fun fetchWeatherForCity(cityName: String) {
-        if (cityName.isBlank()) {
-            Log.w(TAG, "⚠️ Tentativa de buscar clima com cidade vazia")
-            return
-        }
-
-        Log.d(TAG, "🔍 Buscando clima para cidade: $cityName")
-
-        viewModelScope.launch {
-            _isLoadingWeather.value = true
-            try {
-                fetchWeatherByCity(cityName)
-                lastWeatherFetchTime = System.currentTimeMillis()
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao buscar clima por cidade: ${e.message}", e)
-                useMockWeather()
-            } finally {
-                _isLoadingWeather.value = false
-            }
-        }
-    }
-
-    // ============================================
-    // MÉTODOS PRIVADOS DE CLIMA
-    // ============================================
-
-    private suspend fun fetchWeather(lat: Double, lon: Double) {
-        try {
-            val weather = weatherService.getCurrentWeather(lat, lon)
-            _weatherState.value = WeatherUiState.fromWeatherInfo(weather)
-            Log.d(TAG, "✅ Clima atualizado: ${weather.city} - ${weather.temperature}°C")
-            settingsRepository.saveWeatherCache(weather.city, "", System.currentTimeMillis())
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao buscar clima por coordenadas: ${e.message}", e)
-
-            // Tentar fallback por cidade se falhar
-            val lastCity = settingsRepository.lastCityFlow.first()
-            if (lastCity.isNotBlank()) {
-                Log.d(TAG, "📍 Fallback para última cidade: $lastCity")
-                fetchWeatherByCity(lastCity)
-            } else {
-                useMockWeather()
-            }
-        }
-    }
-
-    private suspend fun fetchWeatherByCity(cityName: String) {
-        try {
-            val weather = weatherService.getWeatherByCity(cityName)
-            _weatherState.value = WeatherUiState.fromWeatherInfo(weather)
-            Log.d(TAG, "✅ Clima atualizado para cidade: ${weather.city} - ${weather.temperature}°C")
-            settingsRepository.saveWeatherCache(weather.city, "", System.currentTimeMillis())
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao buscar clima por cidade '$cityName': ${e.message}", e)
-            useMockWeather()
-        }
-    }
-
-    private fun useMockWeather() {
-        Log.d(TAG, "📊 Usando dados mockados de clima")
-
-        val mock = WeatherInfo(
-            city = "Sorocaba/SP",
-            temperature = 24,
-            condition = "Ensolarado",
-            conditionIcon = "☀️",
-            humidity = 68,
-            windSpeed = 12,
-            precipitation = 10,
-            timestamp = System.currentTimeMillis()
-        )
-        _weatherState.value = WeatherUiState.fromWeatherInfo(mock)
-    }
 
     // ============================================
     // BACKUP AUTOMÁTICO

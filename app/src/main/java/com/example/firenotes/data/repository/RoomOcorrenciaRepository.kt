@@ -61,7 +61,8 @@ class RoomOcorrenciaRepository @Inject constructor(
             longitude = ocorrencia.longitude,
             dataHora = ocorrencia.dataHora.toString(),
             historico = ocorrencia.historico,
-            fotos = json.encodeToString(ocorrencia.fotos)
+            fotos = json.encodeToString(ocorrencia.fotos),
+            status = ocorrencia.status
         )
         val existing = ocorrenciaDao.getOcorrenciaById(id)
         if (existing != null) {
@@ -151,6 +152,7 @@ class RoomOcorrenciaRepository @Inject constructor(
                         }.getOrNull()
                     } else null
                 } ?: emptyList()
+            val parsedCpf = rv.pessoaId?.let { ocorrenciaDao.getPessoaById(it)?.cpf }
             Vitima(
                 id = rv.id,
                 ocorrenciaId = id,
@@ -178,6 +180,7 @@ class RoomOcorrenciaRepository @Inject constructor(
                     temperatura = rv.temperatura,
                     observacoesMedicas = rv.observacoesMedicas
                 ),
+                cpf = parsedCpf,
                 lesoesAparentes = rv.lesoesAparentes,
                 transportadoPor = rv.transportadoPor
             )
@@ -256,7 +259,8 @@ class RoomOcorrenciaRepository @Inject constructor(
             veiculos = veiculosList,
             vitimas = vitimasList,
             viaturas = viaturasList,
-            apoiosDetalhados = apoiosList
+            apoiosDetalhados = apoiosList,
+            status = o.status
         )
     }
 
@@ -302,6 +306,7 @@ class RoomOcorrenciaRepository @Inject constructor(
                 }
 
                 val vitimasList = roomVitimas.map { rv ->
+                    val parsedCpf = rv.pessoaId?.let { ocorrenciaDao.getPessoaById(it)?.cpf }
                     val parsedNomeMedico = if (rv.observacoesMedicas?.startsWith("Médico: ") == true) {
                         rv.observacoesMedicas.substringAfter("Médico: ").substringBefore(" | CRM: ")
                     } else {
@@ -334,6 +339,7 @@ class RoomOcorrenciaRepository @Inject constructor(
                             temperatura = rv.temperatura,
                             observacoesMedicas = rv.observacoesMedicas
                         ),
+                        cpf = parsedCpf,
                         lesoesAparentes = rv.lesoesAparentes,
                         transportadoPor = rv.transportadoPor
                     )
@@ -410,7 +416,8 @@ class RoomOcorrenciaRepository @Inject constructor(
                     veiculos = veiculosList,
                     vitimas = vitimasList,
                     viaturas = viaturasList,
-                    apoiosDetalhados = apoiosList
+                    apoiosDetalhados = apoiosList,
+                    status = o.status
                 )
             }
         }

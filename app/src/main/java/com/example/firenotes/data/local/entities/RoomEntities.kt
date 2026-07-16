@@ -14,7 +14,8 @@ data class RoomOcorrencia(
     val longitude: Double?,
     val dataHora: String, // ISO-8601 representation
     val historico: String?,
-    val fotos: String // JSON list or comma-separated paths
+    val fotos: String, // JSON list or comma-separated paths
+    val status: String = "ABERTA"
 )
 
 @Entity(

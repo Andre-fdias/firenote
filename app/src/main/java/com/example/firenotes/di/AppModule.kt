@@ -11,11 +11,9 @@ import com.example.firenotes.data.local.dao.HomeOperationalDao
 import com.example.firenotes.data.repository.RoomOcorrenciaRepository
 import com.example.firenotes.data.service.LocationServiceImpl
 import com.example.firenotes.data.service.OcrServiceImpl
-import com.example.firenotes.data.service.OpenWeatherMapService
 import com.example.firenotes.domain.repository.LocationService
 import com.example.firenotes.domain.repository.OcrService
 import com.example.firenotes.domain.repository.OcorrenciaRepository
-import com.example.firenotes.domain.repository.WeatherService
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import dagger.Binds
@@ -43,11 +41,7 @@ abstract class AppModule {
         locationServiceImpl: LocationServiceImpl
     ): LocationService
 
-    @Binds
-    @Singleton
-    abstract fun bindWeatherService(
-        openWeatherMapService: OpenWeatherMapService
-    ): WeatherService
+
 
     @Binds
     @Singleton

@@ -6,9 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -27,12 +29,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.unit.Dp
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.example.firenotes.domain.model.NaturezaOcorrencia
 import com.example.firenotes.domain.model.Ocorrencia
 import com.example.firenotes.ui.designsystem.colors.FireColors
@@ -55,6 +58,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 // ============================================
 enum class CalendarViewType {
     MONTH, WEEK, DAY
+}
+
+enum class TabType {
+    OCORRENCIAS, AGENDA, CHECKS
 }
 
 data class ReportFilters(
@@ -80,24 +87,13 @@ enum class Prioridade {
 // SISTEMA DE CARDS - ESTILO ELEVATED CARD
 // ============================================
 
-/**
- * Tipos de cards disponíveis no sistema
- */
 enum class CardVariant {
-    /** Card com sombra elevada e borda sutil */
     ELEVATED,
-    /** Card com borda destacada */
     OUTLINED,
-    /** Card com preenchimento sólido */
     FILLED,
-    /** Card com gradiente de fundo */
     GRADIENT
 }
 
-/**
- * Card universal com estilo "Elevated Card"
- * Baseado no modelo de referência com sombra e fundo suave
- */
 @Composable
 fun ElevatedCard(
     title: String? = null,
@@ -109,11 +105,10 @@ fun ElevatedCard(
     onAction: (() -> Unit)? = null,
     variant: CardVariant = CardVariant.ELEVATED,
     modifier: Modifier = Modifier,
+    content: (@Composable ColumnScope.() -> Unit)? = null,
     badge: @Composable (() -> Unit)? = null,
-    trailing: @Composable (() -> Unit)? = null,
-    content: (@Composable ColumnScope.() -> Unit)? = null
+    trailing: @Composable (() -> Unit)? = null
 ) {
-    // Configuração baseada no tipo
     val style = when (variant) {
         CardVariant.ELEVATED -> CardStyle(
             borderColor = FireColors.Primary.copy(alpha = 0.12f),
@@ -177,7 +172,6 @@ fun ElevatedCard(
             defaultElevation = if (variant == CardVariant.ELEVATED) 4.dp else 0.dp
         )
     ) {
-        // Gradiente background para variante GRADIENT
         if (variant == CardVariant.GRADIENT) {
             Box(
                 modifier = Modifier
@@ -199,7 +193,6 @@ fun ElevatedCard(
                 .padding(style.contentPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Header com título e ícone/trailing
             if (title != null || icon != null || trailing != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -211,7 +204,6 @@ fun ElevatedCard(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        // Ícone
                         if (icon != null) {
                             Surface(
                                 shape = CircleShape,
@@ -229,7 +221,6 @@ fun ElevatedCard(
                             }
                         }
 
-                        // Título
                         if (title != null) {
                             Text(
                                 text = title,
@@ -241,7 +232,6 @@ fun ElevatedCard(
                         }
                     }
 
-                    // Badge ou trailing
                     if (badge != null) {
                         badge()
                     }
@@ -251,7 +241,6 @@ fun ElevatedCard(
                 }
             }
 
-            // Subtítulo
             if (subtitle != null) {
                 Text(
                     text = subtitle,
@@ -262,7 +251,6 @@ fun ElevatedCard(
                 )
             }
 
-            // Legenda/Caption
             if (caption != null) {
                 Text(
                     text = caption,
@@ -272,10 +260,8 @@ fun ElevatedCard(
                 )
             }
 
-            // Conteúdo personalizado
             content?.invoke(this)
 
-            // Divisor
             if (actionText != null && onAction != null && content != null) {
                 HorizontalDivider(
                     color = FireColors.OnSurfaceVariant.copy(alpha = 0.08f),
@@ -283,7 +269,6 @@ fun ElevatedCard(
                 )
             }
 
-            // Ação
             if (actionText != null && onAction != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -316,9 +301,10 @@ fun ElevatedCard(
     }
 }
 
-/**
- * Card de ocorrência com estilo Elevated
- */
+// ============================================
+// CARD DE OCORRÊNCIA
+// ============================================
+
 @Composable
 fun ElevatedOccurrenceCard(
     ocorrencia: Ocorrencia,
@@ -364,12 +350,10 @@ fun ElevatedOccurrenceCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Indicador de natureza
             Box(
                 modifier = Modifier
                     .width(4.dp)
@@ -462,9 +446,10 @@ fun ElevatedOccurrenceCard(
     }
 }
 
-/**
- * Card de tarefa com estilo Elevated
- */
+// ============================================
+// CARD DE TAREFA
+// ============================================
+
 @Composable
 fun ElevatedTaskCard(
     task: RoomTarefa,
@@ -517,7 +502,6 @@ fun ElevatedTaskCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Indicador de prioridade
             Box(
                 modifier = Modifier
                     .width(3.dp)
@@ -525,7 +509,6 @@ fun ElevatedTaskCard(
                     .background(priorityColor, RoundedCornerShape(2.dp))
             )
 
-            // Checkbox
             Checkbox(
                 checked = task.concluida,
                 onCheckedChange = { onToggle() },
@@ -536,7 +519,6 @@ fun ElevatedTaskCard(
                 modifier = Modifier.size(20.dp)
             )
 
-            // Conteúdo
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.titulo,
@@ -559,7 +541,6 @@ fun ElevatedTaskCard(
                 }
             }
 
-            // Badge de prioridade
             Surface(
                 shape = RoundedCornerShape(4.dp),
                 color = priorityColor.copy(alpha = 0.1f)
@@ -576,9 +557,10 @@ fun ElevatedTaskCard(
     }
 }
 
-/**
- * Card de evento com estilo Elevated
- */
+// ============================================
+// CARD DE EVENTO
+// ============================================
+
 @Composable
 fun ElevatedEventCard(
     event: RoomEventoAgenda,
@@ -622,7 +604,6 @@ fun ElevatedEventCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Ícone do tipo
                 Surface(
                     shape = CircleShape,
                     color = FireColors.Primary.copy(alpha = 0.1f),
@@ -661,7 +642,6 @@ fun ElevatedEventCard(
                 }
             }
 
-            // Indicador de tipo
             Surface(
                 shape = CircleShape,
                 color = FireColors.Primary.copy(alpha = 0.08f)
@@ -689,11 +669,10 @@ fun HomeScreen(
     onNavigateToWizard: () -> Unit,
     onNavigateToDetails: (id: String) -> Unit,
     onNavigateToAgenda: (date: String) -> Unit = {},
+    onNavigateToConsult: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val weatherState by viewModel.weatherState.collectAsState()
-    val isLoadingWeather by viewModel.isLoadingWeather.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     val selectedDate by viewModel.selectedDate.collectAsState()
@@ -703,6 +682,7 @@ fun HomeScreen(
     val allProntidoes by viewModel.allProntidoes.collectAsState()
 
     var calendarViewType by remember { mutableStateOf(CalendarViewType.MONTH) }
+    var selectedTab by remember { mutableStateOf(TabType.OCORRENCIAS) }
     var showReportDialog by remember { mutableStateOf(false) }
     var filters by remember { mutableStateOf(ReportFilters()) }
 
@@ -799,24 +779,12 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         IconButton(
-                            onClick = { onNavigateToAgenda(selectedDate.toString()) },
+                            onClick = onNavigateToConsult,
                             modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
-                                Icons.Outlined.CalendarMonth,
-                                contentDescription = "Agenda",
-                                tint = FireColors.OnSurfaceVariant,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { showReportDialog = true },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.BarChart,
-                                contentDescription = "Relatórios",
+                                Icons.Outlined.Search,
+                                contentDescription = "Consultas",
                                 tint = FireColors.OnSurfaceVariant,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -902,10 +870,6 @@ fun HomeScreen(
                                 )
                     }
 
-                    if (filters.dateRange != DateRange.TODAY) {
-                        // Implementar filtro por período
-                    }
-
                     matches
                 } ?: emptyList()
             }
@@ -950,8 +914,6 @@ fun HomeScreen(
                 }
 
                 is HomeUiState.Success -> {
-                    val stateSuccess = state
-
                     if (showReportDialog) {
                         ReportDialog(
                             filters = filters,
@@ -973,13 +935,12 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
+                        // Header com Saudação e Data
                         item {
                             EnhancedWelcomeHeader(
                                 greeting = greeting,
                                 userName = userName,
                                 todayDate = todayDate,
-                                weatherState = weatherState,
-                                isLoadingWeather = isLoadingWeather,
                                 prontidaoInfo = remember(selectedDate, allProntidoes) {
                                     calcularProntidaoInfoParaData(selectedDate, allProntidoes)
                                 },
@@ -988,13 +949,7 @@ fun HomeScreen(
                             )
                         }
 
-                        item {
-                            CenterOperationalTabs(
-                                currentType = calendarViewType,
-                                onTypeSelected = { calendarViewType = it }
-                            )
-                        }
-
+                        // Calendário
                         item {
                             AnimatedContent(
                                 targetState = calendarViewType,
@@ -1025,34 +980,28 @@ fun HomeScreen(
                                         )
                                     }
                                     CalendarViewType.DAY -> {
-                                        DailyOperationalView(
+                                        DayCalendarView(
                                             selectedDate = selectedDate,
-                                            allProntidoes = allProntidoes,
-                                            occurrences = occurrencesMap[selectedDate] ?: emptyList(),
-                                            tasks = tasksMap[selectedDate] ?: emptyList(),
-                                            events = eventsMap[selectedDate] ?: emptyList(),
-                                            onToggleTask = { task -> viewModel.toggleTarefa(task) },
-                                            onNavigateToDetails = onNavigateToDetails,
-                                            onOpenAgenda = { onNavigateToAgenda(selectedDate.toString()) }
+                                            allProntidoes = allProntidoes
                                         )
                                     }
                                 }
                             }
                         }
 
-                        if (calendarViewType != CalendarViewType.DAY) {
-                            item {
-                                DailyOperationalView(
-                                    selectedDate = selectedDate,
-                                    allProntidoes = allProntidoes,
-                                    occurrences = occurrencesMap[selectedDate] ?: emptyList(),
-                                    tasks = tasksMap[selectedDate] ?: emptyList(),
-                                    events = eventsMap[selectedDate] ?: emptyList(),
-                                    onToggleTask = { task -> viewModel.toggleTarefa(task) },
-                                    onNavigateToDetails = onNavigateToDetails,
-                                    onOpenAgenda = { onNavigateToAgenda(selectedDate.toString()) }
-                                )
-                            }
+                        // Abas MD3 com listas
+                        item {
+                            OperationalTabsWithLists(
+                                selectedDate = selectedDate,
+                                occurrences = occurrencesMap[selectedDate] ?: emptyList(),
+                                tasks = tasksMap[selectedDate] ?: emptyList(),
+                                events = eventsMap[selectedDate] ?: emptyList(),
+                                selectedTab = selectedTab,
+                                onTabSelected = { selectedTab = it },
+                                onToggleTask = { task -> viewModel.toggleTarefa(task) },
+                                onNavigateToDetails = onNavigateToDetails,
+                                onOpenAgenda = { onNavigateToAgenda(selectedDate.toString()) }
+                            )
                         }
 
                         item {
@@ -1079,214 +1028,93 @@ fun HomeScreen(
 }
 
 // ============================================
-// COMPONENTES DE FILTRO E RELATÓRIOS
+// NOVO HEADER - SEM PREVISÃO DO TEMPO
 // ============================================
 
 @Composable
-fun ReportFilterBar(
-    filters: ReportFilters,
-    onFiltersChanged: (ReportFilters) -> Unit,
-    modifier: Modifier = Modifier
+fun EnhancedWelcomeHeader(
+    greeting: String,
+    userName: String,
+    todayDate: String,
+    prontidaoInfo: ProntidaoInfo,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(modifier = modifier) {
+    ElevatedCard(
+        variant = CardVariant.ELEVATED,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            OutlinedTextField(
-                value = filters.searchQuery,
-                onValueChange = { onFiltersChanged(filters.copy(searchQuery = it)) },
-                placeholder = { Text("Buscar ocorrências...", fontSize = 12.sp) },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = FireColors.OnSurfaceVariant
-                    )
-                },
-                trailingIcon = {
-                    if (filters.searchQuery.isNotEmpty()) {
-                        IconButton(
-                            onClick = { onFiltersChanged(filters.copy(searchQuery = "")) },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Limpar", modifier = Modifier.size(16.dp))
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = FireColors.Primary,
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent
+            Column {
+                Text(
+                    text = "$greeting, $userName 👋",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = FireColors.OnBackground
                 )
-            )
+                Text(
+                    text = todayDate,
+                    fontSize = 13.sp,
+                    color = FireColors.OnSurfaceVariant
+                )
+            }
 
-            IconButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(
-                        if (hasActiveFilters(filters)) FireColors.Primary.copy(alpha = 0.2f)
-                        else Color.Transparent,
-                        RoundedCornerShape(12.dp)
-                    )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box {
-                    Icon(
-                        Icons.Outlined.Tune,
-                        contentDescription = "Filtros",
-                        tint = if (hasActiveFilters(filters)) FireColors.Primary else FireColors.OnSurfaceVariant
-                    )
-                    if (hasActiveFilters(filters)) {
+                // Badge Prontidão
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(prontidaoInfo.corHex).copy(alpha = 0.15f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .align(Alignment.TopEnd)
-                                .background(FireColors.Primary, CircleShape)
+                                .background(Color(prontidaoInfo.corHex), CircleShape)
+                        )
+                        Text(
+                            text = "Prontidão ${prontidaoInfo.cor}",
+                            fontSize = 12.sp,
+                            color = Color(prontidaoInfo.corHex),
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
-            }
-        }
 
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            ElevatedCard(
-                variant = CardVariant.ELEVATED,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            ) {
-                Column(
+                // Botão atualizar
+                Surface(
+                    shape = CircleShape,
+                    color = FireColors.Primary.copy(alpha = 0.10f),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .size(36.dp)
+                        .clickable { onRefresh() }
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "📅 Período:",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = FireColors.OnSurfaceVariant
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            DateRange.values().forEach { range ->
-                                FilterChip(
-                                    selected = filters.dateRange == range,
-                                    onClick = {
-                                        onFiltersChanged(filters.copy(dateRange = range))
-                                    },
-                                    label = {
-                                        Text(
-                                            text = when(range) {
-                                                DateRange.TODAY -> "Hoje"
-                                                DateRange.THIS_WEEK -> "Semana"
-                                                DateRange.THIS_MONTH -> "Mês"
-                                                DateRange.CUSTOM -> "Personalizado"
-                                            },
-                                            fontSize = 10.sp
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = FireColors.Primary,
-                                        selectedLabelColor = Color.White,
-                                        containerColor = Color.Transparent,
-                                        labelColor = FireColors.OnSurfaceVariant
-                                    ),
-                                    modifier = Modifier
-                                )
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🚒 Natureza:",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = FireColors.OnSurfaceVariant
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                            FilterChip(
-                                selected = filters.natureType == null,
-                                onClick = {
-                                    onFiltersChanged(filters.copy(natureType = null))
-                                },
-                                label = { Text("Todos", fontSize = 10.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = FireColors.SurfaceVariant,
-                                    selectedLabelColor = FireColors.OnSurface,
-                                    containerColor = Color.Transparent,
-                                    labelColor = FireColors.OnSurfaceVariant
-                                ),
-                                modifier = Modifier
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = FireColors.Primary
                             )
-                            NaturezaOcorrencia.values().forEach { nature ->
-                                FilterChip(
-                                    selected = filters.natureType == nature,
-                                    onClick = {
-                                        onFiltersChanged(filters.copy(natureType = nature))
-                                    },
-                                    label = {
-                                        Text(
-                                            text = when(nature) {
-                                                NaturezaOcorrencia.INCENDIO -> "🔥"
-                                                NaturezaOcorrencia.SALVAMENTO -> "🆘"
-                                                NaturezaOcorrencia.ACIDENTE_TRANSITO -> "🚗"
-                                                NaturezaOcorrencia.QUEDA -> "⬇️"
-                                                NaturezaOcorrencia.PESSOAL -> "👤"
-                                                NaturezaOcorrencia.INDEFINIDA -> "❓"
-                                            },
-                                            fontSize = 12.sp
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = FireColors.Primary,
-                                        selectedLabelColor = Color.White,
-                                        containerColor = Color.Transparent,
-                                        labelColor = FireColors.OnSurfaceVariant
-                                    ),
-                                    modifier = Modifier
-                                )
-                            }
-                        }
-                    }
-
-                    if (hasActiveFilters(filters)) {
-                        TextButton(
-                            onClick = {
-                                onFiltersChanged(ReportFilters())
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(32.dp),
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = FireColors.Error
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Atualizar",
+                                tint = FireColors.Primary,
+                                modifier = Modifier.size(20.dp)
                             )
-                        ) {
-                            Text("Limpar todos os filtros", fontSize = 11.sp)
                         }
                     }
                 }
@@ -1295,177 +1123,409 @@ fun ReportFilterBar(
     }
 }
 
-fun hasActiveFilters(filters: ReportFilters): Boolean {
-    return filters.natureType != null ||
-            filters.searchQuery.isNotEmpty() ||
-            filters.dateRange != DateRange.TODAY ||
-            filters.status != ReportStatus.ALL
-}
-
 // ============================================
-// REPORT DIALOG - CORRIGIDO COM FUNDO SÓLIDO
+// NOVO COMPONENTE - ABAS MD3 COM LISTAS
 // ============================================
 
 @Composable
-fun ReportDialog(
-    filters: ReportFilters,
-    onFiltersChanged: (ReportFilters) -> Unit,
-    onDismiss: () -> Unit,
+fun OperationalTabsWithLists(
+    selectedDate: LocalDate,
     occurrences: List<Ocorrencia>,
-    onNavigateToDetails: (id: String) -> Unit
+    tasks: List<RoomTarefa>,
+    events: List<RoomEventoAgenda>,
+    selectedTab: TabType,
+    onTabSelected: (TabType) -> Unit,
+    onToggleTask: (RoomTarefa) -> Unit,
+    onNavigateToDetails: (String) -> Unit,
+    onOpenAgenda: () -> Unit
 ) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        // Fundo escuro para o diálogo
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xCC000000)) // Fundo escuro com opacidade
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.Center
+    val formattedDate = selectedDate.format(
+        DateTimeFormatter.ofPattern("d 'de' MMMM", Locale("pt", "BR"))
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Card com Data e Botão Ver Agenda
+        ElevatedCard(
+            title = "📅 $formattedDate",
+            subtitle = "Escala e agenda operacional",
+            variant = CardVariant.ELEVATED,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            // Card com fundo sólido
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .heightIn(max = 600.dp)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = RoundedCornerShape(20.dp),
-                        clip = false
-                    )
-                    .border(
-                        width = 0.5.dp,
-                        color = FireColors.Primary.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(20.dp)
-                    ),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = FireColors.Surface // Fundo sólido
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = 8.dp
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.End
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                OutlinedButton(
+                    onClick = onOpenAgenda,
+                     colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = FireColors.Primary
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(32.dp)
                 ) {
-                    // Header com botão fechar
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "📊 Relatório de Ocorrências",
-                            style = FireTypography.HeadlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = FireColors.OnBackground
-                        )
-                        IconButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Fechar",
-                                tint = FireColors.OnSurfaceVariant
-                            )
-                        }
-                    }
-
-                    ReportFilterBar(
-                        filters = filters,
-                        onFiltersChanged = onFiltersChanged
+                    Icon(
+                        Icons.Outlined.CalendarMonth,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Ver agenda completa", fontSize = 11.sp)
+                }
+            }
+        }
 
-                    HorizontalDivider(color = FireColors.OnSurfaceVariant.copy(alpha = 0.1f))
-
-                    if (occurrences.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Search,
-                                    contentDescription = null,
-                                    tint = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Text(
-                                    text = "Nenhuma ocorrência encontrada",
-                                    fontSize = 14.sp,
-                                    color = FireColors.OnSurfaceVariant
-                                )
-                                Text(
-                                    text = "Tente ajustar os filtros",
-                                    fontSize = 12.sp,
-                                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            }
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Resultados: ${occurrences.size} ocorrências",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = FireColors.OnSurface
-                            )
-
-                            occurrences.take(20).forEach { ocorrencia ->
-                                ElevatedOccurrenceCard(
-                                    ocorrencia = ocorrencia,
-                                    onClick = {
-                                        ocorrencia.id?.let {
-                                            onNavigateToDetails(it)
-                                            onDismiss()
+        // Abas MD3
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 4.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    clip = false
+                )
+                .border(
+                    width = 0.5.dp,
+                    color = FireColors.Primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .background(
+                    color = FireColors.Surface.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(16.dp)
+                ),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = FireColors.Surface.copy(alpha = 0.85f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column {
+                // Tab Row
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTab.ordinal,
+                    containerColor = Color.Transparent,
+                    contentColor = FireColors.Primary,
+                    edgePadding = 8.dp,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                            height = 3.dp,
+                            color = FireColors.Primary
+                        )
+                    },
+                    divider = { }
+                ) {
+                    TabType.values().forEachIndexed { index, tab ->
+                        val selected = selectedTab == tab
+                        Tab(
+                            selected = selected,
+                            onClick = { onTabSelected(tab) },
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = when (tab) {
+                                            TabType.OCORRENCIAS -> "🚑"
+                                            TabType.AGENDA -> "📅"
+                                            TabType.CHECKS -> "✅"
+                                        },
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = when (tab) {
+                                            TabType.OCORRENCIAS -> "Ocorrências"
+                                            TabType.AGENDA -> "Agenda"
+                                            TabType.CHECKS -> "Checks"
+                                        },
+                                        fontSize = 13.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (selected) FireColors.Primary else FireColors.OnSurfaceVariant
+                                    )
+                                    if (tab == TabType.OCORRENCIAS && occurrences.isNotEmpty()) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = FireColors.Error,
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = occurrences.size.toString(),
+                                                    fontSize = 9.sp,
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
                                         }
                                     }
-                                )
-                            }
-
-                            if (occurrences.size > 20) {
-                                Text(
-                                    text = "... e mais ${occurrences.size - 20} ocorrências",
-                                    fontSize = 12.sp,
-                                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
+                                    if (tab == TabType.CHECKS && tasks.isNotEmpty()) {
+                                        val pending = tasks.count { !it.concluida }
+                                        if (pending > 0) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = FireColors.Warning,
+                                                modifier = Modifier.size(18.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(
+                                                        text = pending.toString(),
+                                                        fontSize = 9.sp,
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
                     }
+                }
 
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Fechar", fontWeight = FontWeight.Medium)
+                // Conteúdo da Tab
+                when (selectedTab) {
+                    TabType.OCORRENCIAS -> {
+                        OccurrencesList(
+                            occurrences = occurrences,
+                            onNavigateToDetails = onNavigateToDetails
+                        )
                     }
+                    TabType.AGENDA -> {
+                        EventsList(
+                            events = events
+                        )
+                    }
+                    TabType.CHECKS -> {
+                        TasksList(
+                            tasks = tasks,
+                            onToggleTask = onToggleTask
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================
+// LISTA DE OCORRÊNCIAS
+// ============================================
+
+@Composable
+fun OccurrencesList(
+    occurrences: List<Ocorrencia>,
+    onNavigateToDetails: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (occurrences.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        tint = FireColors.Success.copy(alpha = 0.5f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Nenhuma ocorrência hoje",
+                        fontSize = 14.sp,
+                        color = FireColors.OnSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(occurrences) { ocorrencia ->
+                    ElevatedOccurrenceCard(
+                        ocorrencia = ocorrencia,
+                        onClick = { ocorrencia.id?.let(onNavigateToDetails) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ============================================
+// LISTA DE EVENTOS
+// ============================================
+
+@Composable
+fun EventsList(
+    events: List<RoomEventoAgenda>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (events.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.CalendarMonth,
+                        contentDescription = null,
+                        tint = FireColors.Primary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Nenhum evento agendado",
+                        fontSize = 14.sp,
+                        color = FireColors.OnSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(events) { event ->
+                    ElevatedEventCard(event = event)
+                }
+            }
+        }
+    }
+}
+
+// ============================================
+// LISTA DE TAREFAS
+// ============================================
+
+@Composable
+fun TasksList(
+    tasks: List<RoomTarefa>,
+    onToggleTask: (RoomTarefa) -> Unit
+) {
+    var filterPriority by remember { mutableStateOf<Prioridade?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Header com filtro
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "📋 ${tasks.size} tarefa${if (tasks.size > 1) "s" else ""}",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = FireColors.OnBackground
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = FireColors.Success.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        text = "${tasks.count { it.concluida }}/${tasks.size}",
+                        fontSize = 11.sp,
+                        color = FireColors.Success,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = {
+                    filterPriority = when(filterPriority) {
+                        null -> Prioridade.ALTA
+                        Prioridade.ALTA -> Prioridade.MEDIA
+                        Prioridade.MEDIA -> Prioridade.BAIXA
+                        Prioridade.BAIXA -> null
+                    }
+                },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.FilterList,
+                    contentDescription = "Filtrar",
+                    tint = if (filterPriority != null) FireColors.Primary else FireColors.OnSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        val currentFilterPriority = filterPriority
+        val filteredTasks = if (currentFilterPriority != null) {
+            tasks.filter { it.prioridade == currentFilterPriority.name }
+        } else {
+            tasks
+        }
+
+        if (filteredTasks.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (currentFilterPriority != null)
+                        "Nenhuma tarefa com prioridade ${currentFilterPriority.name.lowercase()}"
+                    else
+                        "Nenhuma tarefa cadastrada",
+                    fontSize = 13.sp,
+                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        } else {
+            val sortedTasks = filteredTasks.sortedWith(
+                compareBy<RoomTarefa> { it.concluida }
+                    .thenBy { task -> runCatching { Prioridade.valueOf(task.prioridade) }.getOrDefault(Prioridade.MEDIA).ordinal }
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(sortedTasks) { task ->
+                    ElevatedTaskCard(
+                        task = task,
+                        onToggle = { onToggleTask(task) }
+                    )
                 }
             }
         }
@@ -1847,837 +1907,231 @@ fun WeeklyCalendarView(
     }
 }
 
-// ============================================
-// DAILY OPERATIONAL VIEW - ESTILO ELEVATED CARD
-// ============================================
-
 @Composable
-fun DailyOperationalView(
+fun DayCalendarView(
     selectedDate: LocalDate,
-    allProntidoes: List<RoomProntidaoDia>,
-    occurrences: List<Ocorrencia>,
-    tasks: List<RoomTarefa>,
-    events: List<RoomEventoAgenda>,
-    onToggleTask: (RoomTarefa) -> Unit,
-    onNavigateToDetails: (id: String) -> Unit,
-    onOpenAgenda: () -> Unit
+    allProntidoes: List<RoomProntidaoDia>
 ) {
+    val prontidaoColor = getProntidaoColorForDate(selectedDate, allProntidoes)
     val formattedDate = selectedDate.format(
-        DateTimeFormatter.ofPattern("d 'de' MMMM", Locale("pt", "BR"))
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Card Principal - Dia
-        ElevatedCard(
-            title = "📅 $formattedDate",
-            subtitle = "Escala e agenda operacional",
-            variant = CardVariant.ELEVATED,
-            modifier = Modifier.fillMaxWidth(),
-            trailing = {
-                val prontidao = ProntidaoService.getProntidaoForDate(selectedDate)
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = prontidao.cor.copy(alpha = 0.12f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(prontidao.cor, CircleShape)
-                        )
-                        Text(
-                            text = prontidao.nome.replace("Prontidão ", ""),
-                            fontSize = 10.sp,
-                            color = prontidao.cor,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                OutlinedButton(
-                    onClick = onOpenAgenda,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = FireColors.Primary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.CalendarMonth,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Ver agenda completa", fontSize = 11.sp)
-                }
-            }
-        }
-
-        // Seção de Ocorrências
-        if (occurrences.isNotEmpty()) {
-            ElevatedCard(
-                title = "🚑 Ocorrências",
-                caption = "${occurrences.size} ocorrência${if (occurrences.size > 1) "s" else ""} hoje",
-                variant = CardVariant.ELEVATED,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    occurrences.forEach { ocorrencia ->
-                        ElevatedOccurrenceCard(
-                            ocorrencia = ocorrencia,
-                            onClick = { ocorrencia.id?.let(onNavigateToDetails) }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Seção de Eventos
-        if (events.isNotEmpty()) {
-            ElevatedCard(
-                title = "📋 Agenda",
-                caption = "${events.size} compromisso${if (events.size > 1) "s" else ""} hoje",
-                variant = CardVariant.ELEVATED,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    events.forEach { event ->
-                        ElevatedEventCard(event = event)
-                    }
-                }
-            }
-        }
-
-        // Seção de Tarefas - Checklist Operacional
-        if (tasks.isNotEmpty()) {
-            OperationalChecklist(
-                tasks = tasks,
-                onToggleTask = onToggleTask
-            )
-        }
-    }
-}
-
-// ============================================
-// OPERATIONAL CHECKLIST - ESTILO ELEVATED CARD
-// ============================================
-
-@Composable
-fun OperationalChecklist(
-    tasks: List<RoomTarefa>,
-    onToggleTask: (RoomTarefa) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var filterPriority by remember { mutableStateOf<Prioridade?>(null) }
-
-    ElevatedCard(
-        title = "📋 Checklist Operacional",
-        variant = CardVariant.ELEVATED,
-        modifier = modifier.fillMaxWidth(),
-        trailing = {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = FireColors.Success.copy(alpha = 0.1f)
-            ) {
-                Text(
-                    text = "${tasks.count { it.concluida }}/${tasks.size}",
-                    fontSize = 11.sp,
-                    color = FireColors.Success,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                )
-            }
-        }
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = {
-                    filterPriority = when(filterPriority) {
-                        null -> Prioridade.ALTA
-                        Prioridade.ALTA -> Prioridade.MEDIA
-                        Prioridade.MEDIA -> Prioridade.BAIXA
-                        Prioridade.BAIXA -> null
-                    }
-                },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    Icons.Outlined.FilterList,
-                    contentDescription = "Filtrar",
-                    tint = if (filterPriority != null) FireColors.Primary else FireColors.OnSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        val currentFilterPriority = filterPriority
-        val filteredTasks = if (currentFilterPriority != null) {
-            tasks.filter { it.prioridade == currentFilterPriority.name }
-        } else {
-            tasks
-        }
-
-        if (filteredTasks.isEmpty()) {
-            Text(
-                text = if (filterPriority != null) "Nenhuma tarefa com esta prioridade" else "Nenhuma tarefa cadastrada",
-                fontSize = 12.sp,
-                color = FireColors.OnSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        } else {
-            val sortedTasks = filteredTasks.sortedWith(
-                compareBy<RoomTarefa> { it.concluida }
-                    .thenBy { task -> runCatching { Prioridade.valueOf(task.prioridade) }.getOrDefault(Prioridade.MEDIA).ordinal }
-            )
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                sortedTasks.forEach { task ->
-                    ElevatedTaskCard(
-                        task = task,
-                        onToggle = { onToggleTask(task) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ============================================
-// ESTATÍSTICAS DINÂMICAS
-// ============================================
-
-@Composable
-fun DynamicStatisticsSection(
-    selectedDate: LocalDate,
-    occurrencesMap: Map<LocalDate, List<Ocorrencia>>,
-    tasksMap: Map<LocalDate, List<RoomTarefa>>,
-    eventsMap: Map<LocalDate, List<RoomEventoAgenda>>,
-    calendarViewType: CalendarViewType,
-    modifier: Modifier = Modifier
-) {
-    val stats = when (calendarViewType) {
-        CalendarViewType.DAY -> calculateDayStats(selectedDate, occurrencesMap, tasksMap, eventsMap)
-        CalendarViewType.WEEK -> calculateWeekStats(selectedDate, occurrencesMap, tasksMap, eventsMap)
-        CalendarViewType.MONTH -> calculateMonthStats(selectedDate, occurrencesMap, tasksMap, eventsMap)
-    }
-
-    ElevatedCard(
-        title = "📊 Resumo ${getPeriodLabel(calendarViewType)}",
-        subtitle = getPeriodDateRange(selectedDate, calendarViewType),
-        variant = CardVariant.ELEVATED,
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            StatCard(
-                label = "Ocorrências",
-                value = stats.totalOccurrences,
-                icon = Icons.Default.List,
-                color = FireColors.Primary,
-                modifier = Modifier.weight(1f)
-            )
-            StatCard(
-                label = "Tarefas",
-                value = stats.totalTasks,
-                icon = Icons.Outlined.Checklist,
-                color = FireColors.Secondary,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            StatCard(
-                label = "Eventos",
-                value = stats.totalEvents,
-                icon = Icons.Outlined.Event,
-                color = Color(0xFF9C27B0),
-                modifier = Modifier.weight(1f)
-            )
-            StatCard(
-                label = "Concluídas",
-                value = stats.completedTasks,
-                icon = Icons.Outlined.CheckCircle,
-                color = Color(0xFF4CAF50),
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-data class PeriodStats(
-    val totalOccurrences: Int,
-    val totalTasks: Int,
-    val completedTasks: Int,
-    val totalEvents: Int
-)
-
-fun calculateDayStats(
-    selectedDate: LocalDate,
-    occurrencesMap: Map<LocalDate, List<Ocorrencia>>,
-    tasksMap: Map<LocalDate, List<RoomTarefa>>,
-    eventsMap: Map<LocalDate, List<RoomEventoAgenda>>
-): PeriodStats {
-    val occurrences = occurrencesMap[selectedDate] ?: emptyList()
-    val tasks = tasksMap[selectedDate] ?: emptyList()
-    val events = eventsMap[selectedDate] ?: emptyList()
-
-    return PeriodStats(
-        totalOccurrences = occurrences.size,
-        totalTasks = tasks.size,
-        completedTasks = tasks.count { it.concluida },
-        totalEvents = events.size
-    )
-}
-
-fun calculateWeekStats(
-    selectedDate: LocalDate,
-    occurrencesMap: Map<LocalDate, List<Ocorrencia>>,
-    tasksMap: Map<LocalDate, List<RoomTarefa>>,
-    eventsMap: Map<LocalDate, List<RoomEventoAgenda>>
-): PeriodStats {
-    val weekDates = getWeekDates(selectedDate)
-    return calculatePeriodStats(weekDates, occurrencesMap, tasksMap, eventsMap)
-}
-
-fun calculateMonthStats(
-    selectedDate: LocalDate,
-    occurrencesMap: Map<LocalDate, List<Ocorrencia>>,
-    tasksMap: Map<LocalDate, List<RoomTarefa>>,
-    eventsMap: Map<LocalDate, List<RoomEventoAgenda>>
-): PeriodStats {
-    val monthDates = getMonthDates(selectedDate)
-    return calculatePeriodStats(monthDates, occurrencesMap, tasksMap, eventsMap)
-}
-
-private fun calculatePeriodStats(
-    dates: List<LocalDate>,
-    occurrencesMap: Map<LocalDate, List<Ocorrencia>>,
-    tasksMap: Map<LocalDate, List<RoomTarefa>>,
-    eventsMap: Map<LocalDate, List<RoomEventoAgenda>>
-): PeriodStats {
-    var occurrences = 0
-    var tasks = 0
-    var completed = 0
-    var events = 0
-
-    dates.forEach { date ->
-        occurrences += occurrencesMap[date]?.size ?: 0
-        val taskList = tasksMap[date] ?: emptyList()
-        tasks += taskList.size
-        completed += taskList.count { it.concluida }
-        events += eventsMap[date]?.size ?: 0
-    }
-
-    return PeriodStats(occurrences, tasks, completed, events)
-}
-
-fun getWeekDates(date: LocalDate): List<LocalDate> {
-    val dayOfWeek = date.dayOfWeek.value
-    val mondayOffset = if (dayOfWeek == 7) 6 else dayOfWeek - 1
-    val monday = date.minusDays(mondayOffset.toLong())
-    return List(7) { monday.plusDays(it.toLong()) }
-}
-
-fun getMonthDates(date: LocalDate): List<LocalDate> {
-    val firstDay = date.withDayOfMonth(1)
-    val lastDay = date.withDayOfMonth(date.lengthOfMonth())
-    return (0L..(lastDay.dayOfMonth - 1).toLong())
-        .map { firstDay.plusDays(it) }
-}
-
-fun getPeriodLabel(viewType: CalendarViewType): String {
-    return when (viewType) {
-        CalendarViewType.DAY -> "do Dia"
-        CalendarViewType.WEEK -> "da Semana"
-        CalendarViewType.MONTH -> "do Mês"
-    }
-}
-
-fun getPeriodDateRange(date: LocalDate, viewType: CalendarViewType): String {
-    return when (viewType) {
-        CalendarViewType.DAY -> date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
-        CalendarViewType.WEEK -> {
-            val weekDates = getWeekDates(date)
-            "${weekDates.first().format(DateTimeFormatter.ofPattern("dd/MM"))} - ${weekDates.last().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
-        }
-        CalendarViewType.MONTH -> date.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.forLanguageTag("pt-BR")))
-    }
-}
-
-// ============================================
-// DIÁLOGOS
-// ============================================
-
-@Composable
-fun CityDialog(
-    currentCity: String,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var inputCity by remember { mutableStateOf(currentCity) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xCC000000))
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .shadow(elevation = 12.dp, shape = RoundedCornerShape(16.dp))
-                    .border(0.5.dp, FireColors.Primary.copy(alpha = 0.15f), RoundedCornerShape(16.dp)),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = FireColors.Surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "📍 Localidade",
-                        style = FireTypography.Title,
-                        fontWeight = FontWeight.Bold,
-                        color = FireColors.OnBackground
-                    )
-
-                    OutlinedTextField(
-                        value = inputCity,
-                        onValueChange = { inputCity = it },
-                        label = { Text("Cidade/UF") },
-                        placeholder = { Text("Sorocaba/SP") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = onDismiss) {
-                            Text("Cancelar", color = FireColors.OnSurfaceVariant)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = { onConfirm(inputCity) },
-                            colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Confirmar")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AddEventDialog(
-    selectedDate: LocalDate,
-    onConfirm: (String, String, String, String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var startHour by remember { mutableStateOf("08:00") }
-    var endHour by remember { mutableStateOf("09:00") }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xCC000000))
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .shadow(elevation = 12.dp, shape = RoundedCornerShape(16.dp))
-                    .border(0.5.dp, FireColors.Primary.copy(alpha = 0.15f), RoundedCornerShape(16.dp)),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = FireColors.Surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "📅 Novo Evento - " + selectedDate.format(DateTimeFormatter.ofPattern("dd/MM")),
-                        style = FireTypography.Title,
-                        fontWeight = FontWeight.Bold,
-                        color = FireColors.OnBackground
-                    )
-
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        label = { Text("Título do Evento") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = { Text("Descrição (opcional)") },
-                        singleLine = false,
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = startHour,
-                            onValueChange = { startHour = it },
-                            label = { Text("Início") },
-                            placeholder = { Text("08:00") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        OutlinedTextField(
-                            value = endHour,
-                            onValueChange = { endHour = it },
-                            label = { Text("Fim") },
-                            placeholder = { Text("18:00") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = onDismiss) {
-                            Text("Cancelar", color = FireColors.OnSurfaceVariant)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                if (title.isNotBlank()) {
-                                    onConfirm(title, description, startHour, endHour)
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Salvar")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ============================================
-// GLASS CARD - DEPRECATED, MANTIDO PARA COMPATIBILIDADE
-// ============================================
-
-@Composable
-@Deprecated("Use ElevatedCard instead", ReplaceWith("ElevatedCard()"))
-fun GlassCard(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    ElevatedCard(
-        variant = CardVariant.ELEVATED,
-        modifier = modifier,
-        content = content
-    )
-}
-
-// ============================================
-// ENHANCED WELCOME HEADER
-// ============================================
-
-@Composable
-fun EnhancedWelcomeHeader(
-    greeting: String,
-    userName: String,
-    todayDate: String,
-    weatherState: WeatherUiState,
-    isLoadingWeather: Boolean,
-    prontidaoInfo: ProntidaoInfo,
-    isRefreshing: Boolean,
-    onRefresh: () -> Unit
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "weather_pulse")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = EaseInOutSine), RepeatMode.Reverse),
-        label = "glow"
-    )
-    val iconScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f, targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(tween(2200, easing = EaseInOutSine), RepeatMode.Reverse),
-        label = "scale"
+        DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", Locale("pt", "BR"))
     )
 
     ElevatedCard(
         variant = CardVariant.ELEVATED,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Column {
                 Text(
-                    text = "$greeting, $userName 👋",
-                    fontSize = 20.sp,
+                    text = formattedDate.replaceFirstChar { it.uppercase() },
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = FireColors.OnBackground
                 )
-                Surface(
-                    shape = CircleShape,
-                    color = FireColors.Primary.copy(alpha = 0.10f),
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clickable { onRefresh() }
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        if (isRefreshing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 1.5.dp,
-                                color = FireColors.Primary
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Atualizar",
-                                tint = FireColors.Primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color(prontidaoInfo.corHex).copy(alpha = 0.15f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(Color(prontidaoInfo.corHex), CircleShape)
-                        )
-                        Text(
-                            text = "Prontidão ${prontidaoInfo.cor}",
-                            fontSize = 11.sp,
-                            color = Color(prontidaoInfo.corHex),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
                 Text(
-                    text = todayDate,
+                    text = "Visualização diária",
                     fontSize = 12.sp,
                     color = FireColors.OnSurfaceVariant
                 )
             }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            ElevatedCard(
-                variant = CardVariant.ELEVATED,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.size(60.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(
-                                            Color(0xFF6A3DE8).copy(alpha = glowAlpha * 0.55f),
-                                            Color(0xFF3D9BE8).copy(alpha = glowAlpha * 0.25f),
-                                            Color.Transparent
-                                        )
-                                    ),
-                                    CircleShape
-                                )
-                        )
-                        Text(
-                            text = if (isLoadingWeather) "⏳" else weatherState.conditionIcon,
-                            fontSize = (28 * iconScale).sp,
-                            modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale }
-                        )
-                        if (isLoadingWeather) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(44.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF6A3DE8).copy(alpha = 0.5f)
-                            )
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = weatherState.city.replace("/", ", "),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = FireColors.OnBackground,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = java.time.LocalDate.now()
-                                .format(java.time.format.DateTimeFormatter.ofPattern("d MMM", Locale.forLanguageTag("pt-BR")))
-                                .replaceFirstChar { it.uppercase() },
-                            fontSize = 10.sp,
-                            color = FireColors.OnSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            WeatherDetailChip("💧", weatherState.humidity.replace("💧 ", ""), Color(0xFF4FC3F7))
-                            WeatherDetailChip("🌬️", weatherState.windSpeed.replace("🌬️ ", ""), Color(0xFF90CAF9))
-                            WeatherDetailChip("☁️", weatherState.rainChance.replace("🌧️ ", ""), Color(0xFF80CBC4))
-                        }
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = if (isLoadingWeather) "--°C" else weatherState.temperature,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Black,
-                            color = FireColors.OnBackground
-                        )
-                        Text(
-                            text = if (isLoadingWeather) "..." else weatherState.getTimeAgo(),
-                            fontSize = 9.sp,
-                            color = FireColors.OnSurfaceVariant.copy(alpha = 0.55f)
-                        )
-                        if (!isLoadingWeather && weatherState.error == null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .background(FireColors.Success, CircleShape)
-                                    .align(Alignment.End)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.padding(top = 2.dp, start = 6.dp)
-            ) {
-                Box(modifier = Modifier.size(6.dp).background(FireColors.Success, CircleShape))
-                Text(
-                    text = "Online",
-                    fontSize = 10.sp,
-                    color = FireColors.Success,
-                    fontWeight = FontWeight.Medium
-                )
-            }
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .background(prontidaoColor, CircleShape)
+            )
         }
     }
 }
 
 // ============================================
-// WEATHER DETAIL CHIP
+// REPORT DIALOG
 // ============================================
 
 @Composable
-fun WeatherDetailChip(
-    icon: String,
-    text: String,
-    color: Color
+fun ReportDialog(
+    filters: ReportFilters,
+    onFiltersChanged: (ReportFilters) -> Unit,
+    onDismiss: () -> Unit,
+    occurrences: List<Ocorrencia>,
+    onNavigateToDetails: (id: String) -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = color.copy(alpha = 0.1f),
-        modifier = Modifier.padding(horizontal = 2.dp)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xCC000000))
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.Center
         ) {
-            Text(text = icon, fontSize = 10.sp)
-            Text(
-                text = text,
-                fontSize = 10.sp,
-                color = color,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                softWrap = false
-            )
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .heightIn(max = 600.dp)
+                    .shadow(
+                        elevation = 16.dp,
+                        shape = RoundedCornerShape(20.dp),
+                        clip = false
+                    )
+                    .border(
+                        width = 0.5.dp,
+                        color = FireColors.Primary.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = FireColors.Surface
+                ),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = 8.dp
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "📊 Relatório de Ocorrências",
+                            style = FireTypography.HeadlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = FireColors.OnBackground
+                        )
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Fechar",
+                                tint = FireColors.OnSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Filtros simplificados
+                    OutlinedTextField(
+                        value = filters.searchQuery,
+                        onValueChange = { onFiltersChanged(filters.copy(searchQuery = it)) },
+                        placeholder = { Text("Buscar ocorrências...", fontSize = 12.sp) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = FireColors.OnSurfaceVariant
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = FireColors.Primary,
+                            unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.3f),
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        )
+                    )
+
+                    HorizontalDivider(color = FireColors.OnSurfaceVariant.copy(alpha = 0.1f))
+
+                    if (occurrences.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Search,
+                                    contentDescription = null,
+                                    tint = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    text = "Nenhuma ocorrência encontrada",
+                                    fontSize = 14.sp,
+                                    color = FireColors.OnSurfaceVariant
+                                )
+                                Text(
+                                    text = "Tente ajustar os filtros",
+                                    fontSize = 12.sp,
+                                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Resultados: ${occurrences.size} ocorrências",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = FireColors.OnSurface
+                            )
+
+                            occurrences.take(20).forEach { ocorrencia ->
+                                ElevatedOccurrenceCard(
+                                    ocorrencia = ocorrencia,
+                                    onClick = {
+                                        ocorrencia.id?.let {
+                                            onNavigateToDetails(it)
+                                            onDismiss()
+                                        }
+                                    }
+                                )
+                            }
+
+                            if (occurrences.size > 20) {
+                                Text(
+                                    text = "... e mais ${occurrences.size - 20} ocorrências",
+                                    fontSize = 12.sp,
+                                    color = FireColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Fechar", fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
         }
     }
 }
@@ -2710,47 +2164,6 @@ fun ReadinessLegend() {
             if (index < 2) {
                 Spacer(modifier = Modifier.width(16.dp))
             }
-        }
-    }
-}
-
-// ============================================
-// STAT CARD
-// ============================================
-
-@Composable
-fun StatCard(
-    label: String,
-    value: Int,
-    icon: ImageVector,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    ElevatedCard(
-        variant = CardVariant.ELEVATED,
-        modifier = modifier,
-        icon = icon,
-        iconTint = color
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = value.toString(),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = label,
-                fontSize = 10.sp,
-                color = FireColors.OnSurfaceVariant,
-                letterSpacing = 0.3.sp
-            )
         }
     }
 }
@@ -2789,10 +2202,6 @@ fun getDeviceOwnerName(context: android.content.Context): String {
     }
     return firstWord
 }
-
-// ============================================
-// DETALHE E AUXILIARES DE CÁLCULO DE PRONTIDÃO
-// ============================================
 
 fun getProntidaoColorForDate(date: LocalDate, allProntidoes: List<RoomProntidaoDia>): Color {
     val name = getProntidaoNameForDate(date, allProntidoes)
@@ -2837,10 +2246,6 @@ fun calcularProntidaoInfoParaData(date: LocalDate, allProntidoes: List<RoomPront
         dataFim = fim.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
     )
 }
-
-// ============================================
-// DATA CLASS INTERNA PARA ESTILO DO CARD
-// ============================================
 
 private data class CardStyle(
     val borderColor: Color,
