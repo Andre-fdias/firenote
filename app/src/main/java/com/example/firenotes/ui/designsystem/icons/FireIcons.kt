@@ -57,4 +57,5 @@ object FireIcons {
     val Palette: ImageVector = Icons.Rounded.Palette
     val Cloud: ImageVector = Icons.Rounded.Cloud
     val Mic: ImageVector = Icons.Rounded.Mic
+    val PhotoLibrary: ImageVector = Icons.Rounded.PhotoLibrary
 }

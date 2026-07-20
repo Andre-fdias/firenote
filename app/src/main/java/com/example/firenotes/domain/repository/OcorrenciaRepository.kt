@@ -54,4 +54,8 @@ interface OcorrenciaRepository {
     suspend fun deleteVeiculo(id: String): Result<Unit>
     suspend fun deleteEvidencia(id: String): Result<Unit>
     suspend fun deleteOcorrencia(id: String): Result<Unit>
+
+    // Suggestions for autocompletion
+    suspend fun getViaturaSuggestions(): Result<List<Viatura>>
+    suspend fun getMilitarSuggestions(): Result<List<Militar>>
 }

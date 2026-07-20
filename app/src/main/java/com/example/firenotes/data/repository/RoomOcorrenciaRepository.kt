@@ -541,7 +541,10 @@ class RoomOcorrenciaRepository @Inject constructor(
             uf = pessoa.uf,
             cep = pessoa.cep
         )
-        ocorrenciaDao.insertPessoa(roomPessoa)
+        val rowId = ocorrenciaDao.insertPessoaIgnore(roomPessoa)
+        if (rowId == -1L) {
+            ocorrenciaDao.updatePessoa(roomPessoa)
+        }
         pessoa.copy(id = id, cpf = cleanCpf, rg = cleanRg, nomeSocial = cleanNomeSocial)
     }
 
@@ -931,5 +934,25 @@ class RoomOcorrenciaRepository @Inject constructor(
 
     override suspend fun deleteOcorrencia(id: String): Result<Unit> = runCatching {
         ocorrenciaDao.deleteOcorrencia(id)
+    }
+
+    override suspend fun getViaturaSuggestions(): Result<List<Viatura>> = runCatching {
+        ocorrenciaDao.getDistinctViaturas().map {
+            Viatura(
+                prefixo = it.prefixo,
+                unidade = it.unidade ?: ""
+            )
+        }
+    }
+
+    override suspend fun getMilitarSuggestions(): Result<List<Militar>> = runCatching {
+        ocorrenciaDao.getDistinctMilitares().map {
+            Militar(
+                re = it.re,
+                nomeGuerra = it.nomeGuerra,
+                graduacao = it.graduacao,
+                funcao = it.funcao ?: ""
+            )
+        }
     }
 }

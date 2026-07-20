@@ -28,6 +28,7 @@ import com.example.firenotes.MainActivity
 import com.example.firenotes.ui.designsystem.colors.FireColors
 import com.example.firenotes.ui.designsystem.spacing.FireSpacing
 import com.example.firenotes.ui.designsystem.typography.FireTypography
+import com.example.firenotes.ui.designsystem.components.topbar.FireTopBar
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.delay
@@ -94,21 +95,14 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Configurações",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                modifier = Modifier
+            FireTopBar(
+                title = "⚙️ Configurações",
+                onBackClick = null,
+                backgroundColor = FireColors.Surface,
+                elevation = 2.dp
             )
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = FireColors.Background
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -147,14 +141,13 @@ fun SettingsScreen(
             // Abas de navegação
             ScrollableTabRow(
                 selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                containerColor = Color.Transparent,
+                contentColor = FireColors.Primary,
                 edgePadding = 16.dp,
                 indicator = { tabPositions ->
-                    TabRowDefaults.Indicator(
+                    TabRowDefaults.SecondaryIndicator(
                         modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        height = 3.dp,
-                        color = MaterialTheme.colorScheme.primary
+                        color = FireColors.Primary
                     )
                 },
                 divider = {}
@@ -166,8 +159,9 @@ fun SettingsScreen(
                         text = {
                             Text(
                                 text = title,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal
+                                style = FireTypography.Title,
+                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 15.sp
                             )
                         },
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -807,7 +801,7 @@ private fun PreferenceCard(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = FireColors.Surface
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -819,15 +813,15 @@ private fun PreferenceCard(
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                style = FireTypography.Title,
+                fontWeight = FontWeight.Bold,
+                color = FireColors.OnSurface
             )
             subtitle?.let {
                 Text(
                     text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = FireTypography.Caption,
+                    color = FireColors.OnSurfaceVariant
                 )
             }
             content()
@@ -846,7 +840,7 @@ private fun SwitchPreferenceCard(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = FireColors.Surface
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -863,22 +857,24 @@ private fun SwitchPreferenceCard(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = FireTypography.Title,
+                    fontWeight = FontWeight.Bold,
+                    color = FireColors.OnSurface
                 )
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = FireTypography.Caption,
+                    color = FireColors.OnSurfaceVariant
                 )
             }
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
-                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = FireColors.Primary,
+                    uncheckedThumbColor = FireColors.OnSurfaceVariant,
+                    uncheckedTrackColor = FireColors.SurfaceVariant
                 )
             )
         }

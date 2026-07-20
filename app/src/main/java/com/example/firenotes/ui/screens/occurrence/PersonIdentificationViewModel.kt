@@ -46,6 +46,111 @@ class PersonIdentificationViewModel @Inject constructor(
         }
     }
 
+    fun loadDocumentForEditing(documentId: String) {
+        scope.launch {
+            val occurrenceId = _state.value.occurrenceId
+            if (occurrenceId.isBlank()) return@launch
+
+            val docsResult = repository.getDocumentosDaOcorrencia(occurrenceId)
+            val peopleResult = repository.getPessoasDaOcorrencia(occurrenceId)
+
+            docsResult.onSuccess { docs ->
+                val doc = docs.find { it.id == documentId } ?: return@onSuccess
+                val docType = try { DocumentType.valueOf(doc.tipo.uppercase()) } catch (e: Exception) { DocumentType.RG }
+                
+                peopleResult.onSuccess { people ->
+                    val person = people.find { it.id == doc.pessoaId }
+                    
+                    _state.update { state ->
+                        state.copy(
+                            selectedType = docType,
+                            urlImagem = doc.urlImagem,
+                            ocrText = doc.textoOcr,
+                            telefone = person?.telefone ?: "",
+                            email = person?.email ?: "",
+                            rgState = if (docType == DocumentType.RG) {
+                                RgDocumentState(
+                                    nome = person?.nome ?: "",
+                                    rg = doc.numero ?: "",
+                                    cpf = person?.cpf ?: "",
+                                    nascimento = person?.nascimento ?: "",
+                                    mae = person?.filiacao ?: "",
+                                    naturalidade = person?.naturalidade ?: "",
+                                    orgaoExpedidor = doc.dadosEstruturados["orgaoExpedidor"] ?: "",
+                                    dataExpedicao = doc.dadosEstruturados["dataExpedicao"] ?: "",
+                                    uf = person?.rgUf ?: "SP"
+                                )
+                            } else state.rgState,
+                            cinState = if (docType == DocumentType.CIN) {
+                                CinDocumentState(
+                                    cpf = person?.cpf ?: "",
+                                    nome = person?.nome ?: "",
+                                    nascimento = person?.nascimento ?: "",
+                                    pai = doc.dadosEstruturados["pai"] ?: "",
+                                    mae = person?.filiacao ?: "",
+                                    sexo = person?.sexo ?: "",
+                                    nacionalidade = person?.nacionalidade ?: "",
+                                    naturalidade = person?.naturalidade ?: "",
+                                    orgao = doc.dadosEstruturados["orgao"] ?: "",
+                                    expedicao = doc.dadosEstruturados["expedicao"] ?: "",
+                                    validade = doc.dadosEstruturados["validade"] ?: ""
+                                )
+                            } else state.cinState,
+                            cnhState = if (docType == DocumentType.CNH) {
+                                CnhDocumentState(
+                                    nome = person?.nome ?: "",
+                                    cpf = person?.cpf ?: "",
+                                    registro = doc.numero ?: "",
+                                    categoria = doc.dadosEstruturados["categoria"] ?: "",
+                                    nascimento = person?.nascimento ?: "",
+                                    filiacao = person?.filiacao ?: "",
+                                    primeiraHabilitacao = doc.dadosEstruturados["primeiraHabilitacao"] ?: "",
+                                    validade = doc.dadosEstruturados["validade"] ?: ""
+                                )
+                            } else state.cnhState,
+                            cpfState = if (docType == DocumentType.CPF) {
+                                CpfDocumentState(
+                                    nome = person?.nome ?: "",
+                                    cpf = person?.cpf ?: "",
+                                    nascimento = person?.nascimento ?: "",
+                                    filiacao = person?.filiacao ?: "",
+                                    situacao = doc.dadosEstruturados["situacao"] ?: "",
+                                    dataInscricao = doc.dadosEstruturados["dataInscricao"] ?: ""
+                                )
+                            } else state.cpfState,
+                            crlvState = if (docType == DocumentType.CRLV) {
+                                CrlvDocumentState(
+                                    placa = doc.numero ?: "",
+                                    marca = doc.dadosEstruturados["marca"] ?: "",
+                                    modelo = doc.dadosEstruturados["modelo"] ?: "",
+                                    versao = doc.dadosEstruturados["versao"] ?: "",
+                                    anoFabricacao = doc.dadosEstruturados["anoFabricacao"] ?: "",
+                                    anoModelo = doc.dadosEstruturados["anoModelo"] ?: "",
+                                    cor = doc.dadosEstruturados["cor"] ?: "",
+                                    motor = doc.dadosEstruturados["motor"] ?: "",
+                                    renavam = doc.dadosEstruturados["renavam"] ?: "",
+                                    chassi = doc.dadosEstruturados["chassi"] ?: "",
+                                    proprietario = person?.nome ?: "",
+                                    cpfProprietario = person?.cpf ?: ""
+                                )
+                            } else state.crlvState,
+                            oabState = if (docType == DocumentType.OAB) {
+                                OabDocumentState(
+                                    nome = person?.nome ?: "",
+                                    numero = doc.numero ?: "",
+                                    uf = person?.rgUf ?: "SP",
+                                    expedicao = doc.dadosEstruturados["expedicao"] ?: ""
+                                )
+                            } else state.oabState,
+                            editingDocumentId = documentId,
+                            editingPessoaId = person?.id
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun selectDocumentType(type: DocumentType) {
         _state.update {
             it.copy(
@@ -90,7 +195,7 @@ class PersonIdentificationViewModel @Inject constructor(
     }
 
     fun processOcr(imageUri: android.net.Uri) {
-        _state.update { it.copy(isOcrProcessing = true) }
+        _state.update { it.copy(isOcrProcessing = true, urlImagem = imageUri.toString()) }
         scope.launch {
             val result = ocrService.recognizeText(imageUri)
             result.onSuccess { ocrResult ->
@@ -217,7 +322,7 @@ class PersonIdentificationViewModel @Inject constructor(
         scope.launch {
             val state = _state.value
             val type = state.selectedType ?: return@launch
-            val docId = UUID.randomUUID().toString()
+            val docId = state.editingDocumentId ?: UUID.randomUUID().toString()
 
             val mainNumber: String
             val values: Map<String, String>
@@ -309,6 +414,7 @@ class PersonIdentificationViewModel @Inject constructor(
             when (type) {
                 DocumentType.RG -> {
                     pessoa = Pessoa(
+                        id = state.editingPessoaId,
                         nome = state.rgState.nome,
                         cpf = state.rgState.cpf,
                         rg = state.rgState.rg,
@@ -323,6 +429,7 @@ class PersonIdentificationViewModel @Inject constructor(
                 }
                 DocumentType.CIN -> {
                     pessoa = Pessoa(
+                        id = state.editingPessoaId,
                         nome = state.cinState.nome,
                         cpf = state.cinState.cpf,
                         nascimento = state.cinState.nascimento,
@@ -337,6 +444,7 @@ class PersonIdentificationViewModel @Inject constructor(
                 }
                 DocumentType.CNH -> {
                     pessoa = Pessoa(
+                        id = state.editingPessoaId,
                         nome = state.cnhState.nome,
                         cpf = state.cnhState.cpf,
                         nascimento = state.cnhState.nascimento,
@@ -347,6 +455,7 @@ class PersonIdentificationViewModel @Inject constructor(
                 }
                 DocumentType.CPF -> {
                     pessoa = Pessoa(
+                        id = state.editingPessoaId,
                         nome = state.cpfState.nome,
                         cpf = state.cpfState.cpf,
                         nascimento = state.cpfState.nascimento,
@@ -357,6 +466,7 @@ class PersonIdentificationViewModel @Inject constructor(
                 }
                 DocumentType.CRLV -> {
                     pessoa = Pessoa(
+                        id = state.editingPessoaId,
                         nome = state.crlvState.proprietario,
                         cpf = state.crlvState.cpfProprietario,
                         telefone = state.telefone.takeIf { it.isNotBlank() },
@@ -365,6 +475,7 @@ class PersonIdentificationViewModel @Inject constructor(
                 }
                 DocumentType.OAB -> {
                     pessoa = Pessoa(
+                        id = state.editingPessoaId,
                         nome = state.oabState.nome,
                         telefone = state.telefone.takeIf { it.isNotBlank() },
                         email = state.email.takeIf { it.isNotBlank() }
@@ -378,6 +489,7 @@ class PersonIdentificationViewModel @Inject constructor(
                 pessoaId = null,
                 tipo = type.name,
                 numero = mainNumber,
+                urlImagem = state.urlImagem,
                 dadosEstruturados = values,
                 textoOcr = state.ocrText,
                 dataUpload = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
@@ -442,5 +554,8 @@ data class PersonIdentificationUiState(
     val crlvState: CrlvDocumentState = CrlvDocumentState(),
     val oabState: OabDocumentState = OabDocumentState(),
     val telefone: String = "",
-    val email: String = ""
+    val email: String = "",
+    val urlImagem: String? = null,
+    val editingDocumentId: String? = null,
+    val editingPessoaId: String? = null
 )

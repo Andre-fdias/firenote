@@ -25,6 +25,7 @@ import com.example.firenotes.ui.designsystem.typography.FireTypography
 @Composable
 fun AddViaturaDialogV2(
     viatura: Viatura? = null,
+    viaturaSuggestions: List<Viatura> = emptyList(),
     onDismiss: () -> Unit,
     onConfirm: (prefixo: String, unidade: String, kmSaida: Int?, kmLocal: Int?, observacoes: String) -> Unit
 ) {
@@ -40,10 +41,7 @@ fun AddViaturaDialogV2(
     
     fun validatePrefixo(input: String): Boolean {
         val clean = input.uppercase().replace(Regex("[^A-Z0-9]"), "")
-        return clean.length == 7 && (
-            clean.matches(Regex("^[A-Z]{2}\\d{5}$")) ||
-            clean.matches(Regex("^[A-Z]{2}\\d[A-Z]\\d{3}$"))
-        )
+        return clean.length in 7..9
     }
     
     val isKmInvalid = remember(kmSaidaRaw, kmLocalRaw) {
@@ -130,52 +128,102 @@ fun AddViaturaDialogV2(
                             color = FireColors.Primary
                         )
                     }
-                    
-                    OutlinedTextField(
-                        value = prefixo,
-                        onValueChange = { 
-                            val formatted = it.uppercase().replace(" ", "")
-                            prefixo = formatted
-                            prefixoError = if (formatted.isNotBlank() && !validatePrefixo(formatted)) {
-                                "Formato: XX-12345 ou XX1C234"
-                            } else null
-                        },
-                        label = { Text("Prefixo", style = FireTypography.BodyMedium) },
-                        placeholder = { Text("UR-12345", style = FireTypography.BodyMedium) },
-                        isError = prefixoError != null,
-                        supportingText = {
-                            if (prefixoError != null) {
-                                Text(prefixoError!!, color = FireColors.Error)
-                            } else {
-                                Text("Formato: XX-12345 ou XX1C234", style = FireTypography.LabelSmall)
+                           var expandedPrefixo by remember { mutableStateOf(false) }
+                    val filteredViaturas = remember(prefixo, viaturaSuggestions) {
+                        if (prefixo.isBlank()) emptyList()
+                        else viaturaSuggestions.filter { it.prefixo.contains(prefixo, ignoreCase = true) && it.prefixo != prefixo }
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = prefixo,
+                            onValueChange = { 
+                                val formatted = it.uppercase().replace(" ", "")
+                                prefixo = formatted
+                                expandedPrefixo = true
+                                prefixoError = if (formatted.isNotBlank() && !validatePrefixo(formatted)) {
+                                    "Formato: 7 a 9 caracteres (ex: XX-12345, ABS12345)"
+                                } else null
+                            },
+                            label = { Text("Prefixo", style = FireTypography.BodyMedium) },
+                            placeholder = { Text("UR-12345", style = FireTypography.BodyMedium) },
+                            isError = prefixoError != null,
+                            supportingText = {
+                                if (prefixoError != null) {
+                                    Text(prefixoError!!, color = FireColors.Error)
+                                } else {
+                                    Text("Formato: 7 a 9 caracteres (ex: XX-12345, ABS12345)", style = FireTypography.LabelSmall)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FireColors.Primary,
+                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        DropdownMenu(
+                            expanded = expandedPrefixo && filteredViaturas.isNotEmpty(),
+                            onDismissRequest = { expandedPrefixo = false },
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            filteredViaturas.take(5).forEach { suggestion ->
+                                DropdownMenuItem(
+                                    text = { Text("${suggestion.prefixo} (${suggestion.unidade})") },
+                                    onClick = {
+                                        prefixo = suggestion.prefixo
+                                        unidade = suggestion.unidade
+                                        expandedPrefixo = false
+                                    }
+                                )
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = FireColors.Primary,
-                            unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                        }
+                    }
                     
-                    OutlinedTextField(
-                        value = unidade,
-                        onValueChange = { 
-                            if (it.length <= 80) {
-                                unidade = it.uppercase()
+                    var expandedUnidade by remember { mutableStateOf(false) }
+                    val filteredUnidades = remember(unidade, viaturaSuggestions) {
+                        if (unidade.isBlank()) emptyList()
+                        else viaturaSuggestions.map { it.unidade }.distinct().filter { it.contains(unidade, ignoreCase = true) && it != unidade }
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = unidade,
+                            onValueChange = { 
+                                if (it.length <= 80) {
+                                    unidade = it.uppercase()
+                                    expandedUnidade = true
+                                }
+                            },
+                            label = { Text("Unidade/Batalhão", style = FireTypography.BodyMedium) },
+                            placeholder = { Text("10º GB", style = FireTypography.BodyMedium) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FireColors.Primary,
+                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        DropdownMenu(
+                            expanded = expandedUnidade && filteredUnidades.isNotEmpty(),
+                            onDismissRequest = { expandedUnidade = false },
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            filteredUnidades.take(5).forEach { suggestion ->
+                                DropdownMenuItem(
+                                    text = { Text(suggestion) },
+                                    onClick = {
+                                        unidade = suggestion
+                                        expandedUnidade = false
+                                    }
+                                )
                             }
-                        },
-                        label = { Text("Unidade/Batalhão", style = FireTypography.BodyMedium) },
-                        placeholder = { Text("10º GB", style = FireTypography.BodyMedium) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = FireColors.Primary,
-                            unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                        }
+                    }
                 }
             }
             

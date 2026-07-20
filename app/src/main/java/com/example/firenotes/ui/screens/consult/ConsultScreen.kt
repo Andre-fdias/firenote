@@ -115,12 +115,6 @@ fun ConsultScreen(
                 backgroundColor = FireColors.Surface,
                 elevation = 2.dp,
                 actions = {
-                    FireIconButton(
-                        icon = FireIcons.CloudDownload,
-                        onClick = {
-                            importLauncher.launch("application/json")
-                        }
-                    )
                     BadgedBox(
                         badge = {
                             if (hasActiveFilters) {
@@ -141,13 +135,36 @@ fun ConsultScreen(
                             }
                         )
                     }
-                    FireIconButton(
-                        icon = FireIcons.Refresh,
-                        onClick = {
-                            logD("User clicked refresh button")
-                            viewModel.loadOccurrences()
+
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        FireIconButton(
+                            icon = FireIcons.MoreVert,
+                            onClick = { menuExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            modifier = Modifier.background(FireColors.Surface)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Receber de outro Usuário", style = FireTypography.Body) },
+                                leadingIcon = { Icon(FireIcons.CloudDownload, contentDescription = null, tint = FireColors.Primary) },
+                                onClick = {
+                                    menuExpanded = false
+                                    importLauncher.launch("application/json")
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Atualizar", style = FireTypography.Body) },
+                                leadingIcon = { Icon(FireIcons.Refresh, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.loadOccurrences()
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             )
         },
@@ -188,6 +205,8 @@ fun ConsultScreen(
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
+
+
 
             /* STREAMING_CHUNK: Building list sorting option selections... */
             Row(
@@ -310,13 +329,37 @@ fun ConsultScreen(
                 }
                 uiState.filteredOccurrences.isEmpty() -> {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        FireEmptyState(
-                            message = if (uiState.searchGlobal.isNotBlank() || hasActiveFilters) {
-                                "Nenhuma ocorrência encontrada com os filtros aplicados"
-                            } else {
-                                "Nenhuma ocorrência registrada"
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                            modifier = Modifier.padding(horizontal = FireSpacing.Medium)
+                        ) {
+                            FireEmptyState(
+                                message = if (uiState.searchGlobal.isNotBlank() || hasActiveFilters) {
+                                    "Nenhuma ocorrência encontrada com os filtros aplicados"
+                                } else {
+                                    "Nenhuma ocorrência registrada"
+                                }
+                            )
+                            if (uiState.searchGlobal.isBlank() && !hasActiveFilters) {
+                                Button(
+                                    onClick = { importLauncher.launch("application/json") },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = FireColors.Primary,
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = FireIcons.CloudDownload,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Receber Ocorrência", style = FireTypography.Label)
+                                }
                             }
-                        )
+                        }
                     }
                 }
                 else -> {

@@ -22,6 +22,7 @@ import com.example.firenotes.ui.screens.occurrence.cards.ChecklistCard
 import com.example.firenotes.ui.screens.occurrence.cards.SummaryCard
 import com.example.firenotes.ui.screens.occurrence.models.ModuleInfo
 import com.example.firenotes.ui.screens.occurrence.models.OccurrenceModule
+import com.example.firenotes.ui.screens.occurrence.models.SubNatureza
 import com.example.firenotes.ui.screens.occurrence.utils.calculateStatus
 import java.time.Duration
 import java.time.Instant
@@ -34,6 +35,8 @@ fun ModularDashboardView(
     uiState: OccurrenceFormUiState,
     onModuleSelected: (OccurrenceModule) -> Unit,
     onFinishClick: () -> Unit,
+    onProtocoloChange: (String) -> Unit = {},
+    onNaturezaChange: (SubNatureza) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Cálculo seguro e reativo do tempo de duração do atendimento
@@ -63,12 +66,15 @@ fun ModularDashboardView(
         SummaryCard(
             protocolo = uiState.protocolo,
             natureza = uiState.natureza.descricao,
+            subNatureza = uiState.subNaturezaSelecionada,
             cidade = uiState.cidade,
             tempoOcorrencia = tempoOcorrencia,
             veiculosCount = uiState.veiculos.size,
             vitimasCount = uiState.vitimas.size,
             viaturasCount = uiState.viaturas.size,
-            prontidao = uiState.prontidaoColor
+            prontidao = uiState.prontidaoColor,
+            onProtocoloChange = onProtocoloChange,
+            onNaturezaChange = onNaturezaChange
         )
 
         // Checklist Operacional (Mantido Intacto)

@@ -1,6 +1,8 @@
 package com.example.firenotes.ui.screens.occurrence.components
 
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import com.example.firenotes.ui.designsystem.components.cards.FireCard
 import com.example.firenotes.ui.designsystem.components.widgets.FireDivider
 import com.example.firenotes.ui.screens.occurrence.models.OccurrenceModule
@@ -35,10 +37,37 @@ fun DocumentosModuleView(
     uiState: OccurrenceFormUiState,
     onNewDocClick: () -> Unit,
     onScanDocClick: () -> Unit, // Mantido no contrato de assinatura para evitar erros de compilação
+    onEditDocClick: (String) -> Unit = {},
+    onDeleteDocClick: (String) -> Unit = {},
     galleryImages: List<GalleryImage>,
     onImageClick: (GalleryImage) -> Unit,
     onBack: () -> Unit
 ) {
+    var docToDelete by remember { mutableStateOf<String?>(null) }
+
+    if (docToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { docToDelete = null },
+            title = { Text("Excluir Documento") },
+            text = { Text("Deseja realmente excluir este documento? Esta ação não pode ser desfeita.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        docToDelete?.let { onDeleteDocClick(it) }
+                        docToDelete = null
+                    }
+                ) {
+                    Text("Excluir", color = FireColors.Error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { docToDelete = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -174,6 +203,7 @@ fun DocumentosModuleView(
                         border = BorderStroke(1.dp, FireColors.OnSurfaceVariant.copy(alpha = 0.08f)),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { doc.id?.let { onEditDocClick(it) } }
                             .animateItem()
                     ) {
                         Column(
@@ -189,27 +219,54 @@ fun DocumentosModuleView(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
                                 ) {
+                                    val (badgeBg, badgeText) = remember(doc.tipo) {
+                                        when (doc.tipo.uppercase()) {
+                                            "RG" -> Color(0xFFE3F2FD) to Color(0xFF1E88E5)
+                                            "CIN" -> Color(0xFFE8F5E9) to Color(0xFF43A047)
+                                            "CNH" -> Color(0xFFFFF3E0) to Color(0xFFFB8C00)
+                                            "CPF" -> Color(0xFFF3E5F5) to Color(0xFF8E24AA)
+                                            "CRLV" -> Color(0xFFE0F2F1) to Color(0xFF00897B)
+                                            "OAB" -> Color(0xFFFFEBEE) to Color(0xFFE53935)
+                                            else -> FireColors.Primary.copy(alpha = 0.1f) to FireColors.Primary
+                                        }
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(FireColors.Primary.copy(alpha = 0.1f))
+                                            .background(badgeBg)
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
                                         Text(
                                             text = doc.tipo.uppercase(),
                                             style = FireTypography.LabelSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = FireColors.Primary
+                                            color = badgeText
                                         )
                                     }
                                 }
 
-                                Text(
-                                    text = "Nº ${doc.numero ?: "N/D"}",
-                                    style = FireTypography.LabelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = FireColors.OnSurfaceVariant
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Nº ${doc.numero ?: "N/D"}",
+                                        style = FireTypography.LabelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = FireColors.OnSurfaceVariant
+                                    )
+                                    IconButton(
+                                        onClick = { docToDelete = doc.id },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Excluir",
+                                            tint = FireColors.Error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                             }
 
                             FireDivider(

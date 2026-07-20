@@ -251,6 +251,14 @@ fun ImageViewerDialog(
     onDownloadImage: ((GalleryImage) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(view) {
+        val window = (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+        if (window != null) {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        }
+        onDispose {}
+    }
     val scope = rememberCoroutineScope()
     val initialIndex = remember(initialImageId, imagesList) {
         imagesList.indexOfFirst { it.id == initialImageId }.coerceAtLeast(0)
@@ -270,6 +278,7 @@ fun ImageViewerDialog(
         )
     ) {
         Scaffold(
+            modifier = Modifier.systemBarsPadding(),
             topBar = {
                 val currentImage = imagesList.getOrNull(pagerState.currentPage)
                 TopAppBar(

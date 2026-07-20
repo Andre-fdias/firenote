@@ -35,7 +35,9 @@ import com.example.firenotes.ui.designsystem.typography.FireTypography
 fun VeiculosModuleView(
     uiState: OccurrenceFormUiState,
     onNewVehicleClick: () -> Unit,
-    onScanCrlvClick: () -> Unit, // Mantido na assinatura para evitar quebras de compilação
+    onScanCrlvClick: () -> Unit,
+    onEditVehicleClick: (VeiculoEnvolvido) -> Unit,
+    onDeleteVehicleClick: (VeiculoEnvolvido) -> Unit,
     galleryImages: List<GalleryImage>,
     onImageClick: (GalleryImage) -> Unit,
     onBack: () -> Unit
@@ -84,27 +86,55 @@ fun VeiculosModuleView(
                         }
                     }
 
-                    // Botão de ação premium integrado de alcance otimizado
-                    FilledTonalButton(
-                        onClick = onNewVehicleClick,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = FireColors.Primary.copy(alpha = 0.12f),
-                            contentColor = FireColors.Primary
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.height(40.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = FireIcons.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Novo",
-                            style = FireTypography.LabelMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        // Scan CRLV button
+                        FilledTonalButton(
+                            onClick = onScanCrlvClick,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = FireColors.Success.copy(alpha = 0.12f),
+                                contentColor = FireColors.Success
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = FireIcons.PhotoCamera,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Scanear CRLV",
+                                style = FireTypography.LabelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Novo button
+                        FilledTonalButton(
+                            onClick = onNewVehicleClick,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = FireColors.Primary.copy(alpha = 0.12f),
+                                contentColor = FireColors.Primary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = FireIcons.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Novo",
+                                style = FireTypography.LabelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -342,6 +372,43 @@ fun VeiculosModuleView(
                                             )
                                         }
                                     }
+                                }
+                            }
+
+                            FireDivider(
+                                modifier = Modifier.padding(vertical = FireSpacing.ExtraSmall)
+                            )
+
+                            // CRUD Actions Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(
+                                    onClick = { onEditVehicleClick(veiculo) },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = FireColors.Primary)
+                                ) {
+                                    Icon(
+                                        imageVector = FireIcons.Edit,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Editar", style = FireTypography.LabelMedium)
+                                }
+                                Spacer(modifier = Modifier.width(FireSpacing.Small))
+                                TextButton(
+                                    onClick = { onDeleteVehicleClick(veiculo) },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = FireColors.Error)
+                                ) {
+                                    Icon(
+                                        imageVector = FireIcons.Delete,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Excluir", style = FireTypography.LabelMedium)
                                 }
                             }
                         }

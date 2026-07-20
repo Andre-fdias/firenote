@@ -88,7 +88,15 @@ class HomeViewModel @Inject constructor(
     private val _allProntidoes = MutableStateFlow<List<RoomProntidaoDia>>(emptyList())
     val allProntidoes: StateFlow<List<RoomProntidaoDia>> = _allProntidoes.asStateFlow()
 
+    private val _currentCity = MutableStateFlow<String>("...")
+    val currentCity: StateFlow<String> = _currentCity.asStateFlow()
 
+    private val _hasDismissedAlertsThisSession = MutableStateFlow(false)
+    val hasDismissedAlertsThisSession: StateFlow<Boolean> = _hasDismissedAlertsThisSession.asStateFlow()
+
+    fun dismissAlertsPermanently() {
+        _hasDismissedAlertsThisSession.value = true
+    }
 
     // ============================================
     // INICIALIZAÇÃO
@@ -99,6 +107,34 @@ class HomeViewModel @Inject constructor(
         loadOccurrences()
         triggerAutoBackups()
         observeHomeData()
+        fetchCity()
+    }
+
+    fun fetchCity() {
+        viewModelScope.launch {
+            try {
+                if (locationService.checkPermissions()) {
+                    locationService.getCurrentLocation().onSuccess { coords ->
+                        locationService.getAddressFromLocation(coords.first, coords.second).onSuccess { address ->
+                            if (address.cidade.isNotEmpty()) {
+                                _currentCity.value = address.cidade
+                            } else {
+                                _currentCity.value = "Local não informado"
+                            }
+                        }.onFailure {
+                            _currentCity.value = "Local não informado"
+                        }
+                    }.onFailure {
+                        _currentCity.value = "Local não informado"
+                    }
+                } else {
+                    _currentCity.value = "Local não informado"
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Erro ao buscar cidade: ${e.message}")
+                _currentCity.value = "Local não informado"
+            }
+        }
     }
 
     // ============================================
@@ -156,7 +192,8 @@ class HomeViewModel @Inject constructor(
         data: LocalDate,
         descricao: String? = null,
         prioridade: Prioridade = Prioridade.MEDIA,
-        categoria: String = "Operacional"
+        categoria: String = "Operacional",
+        hora: String? = null
     ) {
         if (titulo.isBlank()) {
             Log.w(TAG, "⚠️ Tentativa de adicionar tarefa com título vazio")
@@ -174,9 +211,20 @@ class HomeViewModel @Inject constructor(
                     categoria = categoria,
                     prioridade = prioridade.name,
                     criadoEm = System.currentTimeMillis(),
-                    concluidoEm = null
+                    concluidoEm = null,
+                    hora = hora
                 )
                 homeOperationalDao.insertTarefa(novaTarefa)
+                if (novaTarefa.hora != null) {
+                    com.example.firenotes.util.NotificationScheduler.schedule(
+                        context,
+                        novaTarefa.id,
+                        "Tarefa Agendada",
+                        "${novaTarefa.titulo} (${novaTarefa.categoria})",
+                        novaTarefa.data,
+                        novaTarefa.hora
+                    )
+                }
                 Log.d(TAG, "✅ Tarefa adicionada: ${novaTarefa.titulo}")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao adicionar tarefa: ${e.message}", e)
@@ -192,6 +240,18 @@ class HomeViewModel @Inject constructor(
                     concluidoEm = if (!tarefa.concluida) System.currentTimeMillis() else null
                 )
                 homeOperationalDao.updateTarefa(updated)
+                if (updated.concluida) {
+                    com.example.firenotes.util.NotificationScheduler.cancel(context, updated.id)
+                } else if (updated.hora != null) {
+                    com.example.firenotes.util.NotificationScheduler.schedule(
+                        context,
+                        updated.id,
+                        "Tarefa Agendada",
+                        "${updated.titulo} (${updated.categoria})",
+                        updated.data,
+                        updated.hora
+                    )
+                }
                 Log.d(TAG, "🔄 Tarefa toggled: ${tarefa.titulo} -> ${updated.concluida}")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao toggle tarefa: ${e.message}", e)
@@ -203,6 +263,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 homeOperationalDao.deleteTarefa(id)
+                com.example.firenotes.util.NotificationScheduler.cancel(context, id)
                 Log.d(TAG, "🗑️ Tarefa deletada: $id")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao deletar tarefa: ${e.message}", e)
@@ -239,6 +300,16 @@ class HomeViewModel @Inject constructor(
                     tipo = tipo?.name
                 )
                 homeOperationalDao.insertEvento(novoEvento)
+                if (novoEvento.horaInicio != null) {
+                    com.example.firenotes.util.NotificationScheduler.schedule(
+                        context,
+                        novoEvento.id,
+                        "Evento Agendado",
+                        "${novoEvento.titulo} (Inicio: ${novoEvento.horaInicio})",
+                        novoEvento.data,
+                        novoEvento.horaInicio
+                    )
+                }
                 Log.d(TAG, "✅ Evento adicionado: ${novoEvento.titulo}")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao adicionar evento: ${e.message}", e)
@@ -250,6 +321,17 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 homeOperationalDao.updateTarefa(tarefa)
+                com.example.firenotes.util.NotificationScheduler.cancel(context, tarefa.id)
+                if (!tarefa.concluida && tarefa.hora != null) {
+                    com.example.firenotes.util.NotificationScheduler.schedule(
+                        context,
+                        tarefa.id,
+                        "Tarefa Agendada",
+                        "${tarefa.titulo} (${tarefa.categoria})",
+                        tarefa.data,
+                        tarefa.hora
+                    )
+                }
                 Log.d(TAG, "✅ Tarefa atualizada: ${tarefa.titulo}")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao atualizar tarefa: ${e.message}", e)
@@ -261,6 +343,17 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 homeOperationalDao.updateEvento(evento)
+                com.example.firenotes.util.NotificationScheduler.cancel(context, evento.id)
+                if (evento.horaInicio != null) {
+                    com.example.firenotes.util.NotificationScheduler.schedule(
+                        context,
+                        evento.id,
+                        "Evento Agendado",
+                        "${evento.titulo} (Inicio: ${evento.horaInicio})",
+                        evento.data,
+                        evento.horaInicio
+                    )
+                }
                 Log.d(TAG, "✅ Evento atualizado: ${evento.titulo}")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao atualizar evento: ${e.message}", e)
@@ -272,6 +365,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 homeOperationalDao.deleteEvento(id)
+                com.example.firenotes.util.NotificationScheduler.cancel(context, id)
                 Log.d(TAG, "🗑️ Evento deletado: $id")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao deletar evento: ${e.message}", e)

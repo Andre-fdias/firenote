@@ -82,7 +82,9 @@ data class OccurrenceFormUiState(
     val errorMessage: String? = null,
     val operationProgress: Float = 0f,
     val operationMessage: String? = null,
-    val prontidaoColor: String = "VERDE"
+    val prontidaoColor: String = "VERDE",
+    val viaturasSuggestions: List<Viatura> = emptyList(),
+    val militaresSuggestions: List<Militar> = emptyList()
 )
 
 // ============================================
@@ -113,6 +115,7 @@ class OccurrenceFormViewModel @Inject constructor(
         logD("ViewModel inicializado")
         initializeDefaultValues()
         loadOrgaosApoio()
+        loadSuggestions()
         loadProntidaoForDate(_uiState.value.data)
     }
 
@@ -218,6 +221,18 @@ class OccurrenceFormViewModel @Inject constructor(
         }
     }
 
+    fun loadSuggestions() {
+        viewModelScope.launch {
+            try {
+                val viaturas = repository.getViaturaSuggestions().getOrDefault(emptyList())
+                val militares = repository.getMilitarSuggestions().getOrDefault(emptyList())
+                _uiState.update { it.copy(viaturasSuggestions = viaturas, militaresSuggestions = militares) }
+            } catch (e: Exception) {
+                logE("Erro ao carregar sugestoes", e)
+            }
+        }
+    }
+
     private fun getFallbackOrgaos(): List<OrgaoApoio> {
         return listOf(
             OrgaoApoio("1", "Polícia Rodoviária Federal", "PRF"),
@@ -292,6 +307,30 @@ class OccurrenceFormViewModel @Inject constructor(
 
     fun updateManualAddress(rua: String, numero: String, bairro: String, cidade: String, uf: String) {
         _uiState.update { it.copy(rua = rua, numero = numero, bairro = bairro, cidade = cidade, uf = uf) }
+        saveOccurrenceDraft()
+    }
+
+    fun updateFullLocation(
+        lat: Double,
+        lng: Double,
+        rua: String,
+        numero: String,
+        bairro: String,
+        cidade: String,
+        uf: String
+    ) {
+        _uiState.update {
+            it.copy(
+                latitude = lat,
+                longitude = lng,
+                rua = rua,
+                numero = numero,
+                bairro = bairro,
+                cidade = cidade,
+                uf = uf,
+                isGpsLoading = false
+            )
+        }
         saveOccurrenceDraft()
     }
 
@@ -650,21 +689,30 @@ class OccurrenceFormViewModel @Inject constructor(
         proprietarioId: String?,
         extractedFields: Map<String, String> = emptyMap(),
         rawText: String = "",
-        imageUri: Uri? = null
+        imageUri: Uri? = null,
+        id: String? = null
     ) {
         val occurrenceId = _uiState.value.id ?: return
-        logD("Salvando veículo: placa=$placa, modelo=$modelo")
+        logD("Salvando veículo: placa=$placa, modelo=$modelo, id=$id")
         setLoading(true)
 
         viewModelScope.launch {
             try {
+                val existingVeiculo = if (id != null) _uiState.value.veiculos.find { it.id == id } else null
+
                 val urlCrlv = if (imageUri != null && imageUri != Uri.EMPTY) {
-                    val bytes = getFileBytes(imageUri).getOrThrow()
-                    val path = "$occurrenceId/veiculos/crlv_${System.currentTimeMillis()}.png"
-                    repository.uploadFile("ocorrencias", path, bytes).getOrThrow()
-                } else null
+                    val uriStr = imageUri.toString()
+                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://")) {
+                        uriStr
+                    } else {
+                        val bytes = getFileBytes(imageUri).getOrThrow()
+                        val path = "$occurrenceId/veiculos/crlv_${System.currentTimeMillis()}.png"
+                        repository.uploadFile("ocorrencias", path, bytes).getOrThrow()
+                    }
+                } else existingVeiculo?.urlCrlv
 
                 val veiculo = VeiculoEnvolvido(
+                    id = id,
                     ocorrenciaId = occurrenceId,
                     placa = placa,
                     cor = cor,
@@ -672,22 +720,27 @@ class OccurrenceFormViewModel @Inject constructor(
                     modelo = modelo,
                     ano = ano,
                     proprietarioId = proprietarioId,
-                    renavam = extractedFields["renavam"],
-                    marca = extractedFields["marca_modelo"] ?: extractedFields["marca"] ?: "",
-                    versao = extractedFields["marca_modelo"] ?: extractedFields["versao"] ?: "",
-                    anoFabricacao = extractedFields["ano_fabricacao"]?.toIntOrNull(),
-                    anoModelo = extractedFields["ano_modelo"]?.toIntOrNull(),
-                    exercicio = extractedFields["exercicio"] ?: "",
+                    renavam = extractedFields["renavam"] ?: existingVeiculo?.renavam,
+                    marca = extractedFields["marca_modelo"] ?: extractedFields["marca"] ?: existingVeiculo?.marca ?: "",
+                    versao = extractedFields["marca_modelo"] ?: extractedFields["versao"] ?: existingVeiculo?.versao ?: "",
+                    anoFabricacao = extractedFields["ano_fabricacao"]?.toIntOrNull() ?: existingVeiculo?.anoFabricacao,
+                    anoModelo = extractedFields["ano_modelo"]?.toIntOrNull() ?: existingVeiculo?.anoModelo,
+                    exercicio = extractedFields["exercicio"] ?: existingVeiculo?.exercicio ?: "",
                     urlCrlv = urlCrlv,
-                    ocrTextoCrlv = rawText,
-                    ocrDadosEstruturados = extractedFields
+                    ocrTextoCrlv = if (rawText.isNotBlank()) rawText else existingVeiculo?.ocrTextoCrlv,
+                    ocrDadosEstruturados = if (extractedFields.isNotEmpty()) extractedFields else existingVeiculo?.ocrDadosEstruturados ?: emptyMap()
                 )
 
                 val saved = repository.addVeiculoEnvolvido(veiculo).getOrThrow()
                 logD("Veículo salvo: ID=${saved.id}")
 
                 _uiState.update { state ->
-                    state.copy(isLoading = false, veiculos = state.veiculos + saved)
+                    val updatedList = if (state.veiculos.any { it.id == saved.id }) {
+                        state.veiculos.map { if (it.id == saved.id) saved else it }
+                    } else {
+                        state.veiculos + saved
+                    }
+                    state.copy(isLoading = false, veiculos = updatedList)
                 }
             } catch (e: Exception) {
                 logE("Erro ao salvar veículo", e)
@@ -863,6 +916,7 @@ class OccurrenceFormViewModel @Inject constructor(
                     }
                     state.copy(isLoading = false, viaturas = updatedList)
                 }
+                loadSuggestions()
             } catch (e: Exception) {
                 logE("Erro ao adicionar viatura", e)
                 setError("Erro ao adicionar viatura: ${e.localizedMessage}")
@@ -942,6 +996,7 @@ class OccurrenceFormViewModel @Inject constructor(
                     }
                     state.copy(isLoading = false, viaturas = updatedViaturas)
                 }
+                loadSuggestions()
             } catch (e: Exception) {
                 logE("Erro ao adicionar militar", e)
                 setError("Erro ao adicionar militar: ${e.localizedMessage}")

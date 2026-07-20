@@ -8,6 +8,7 @@ import android.net.Uri
 import java.io.File
 import com.example.firenotes.domain.model.Ocorrencia
 import com.example.firenotes.domain.model.Evidencia
+import com.example.firenotes.domain.model.Documento
 import com.example.firenotes.domain.repository.OcorrenciaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +22,7 @@ data class OccurrenceDetailsUiState(
     val occurrence: Ocorrencia? = null,
     val evidencias: List<Evidencia> = emptyList(),
     val pessoas: List<com.example.firenotes.domain.model.Pessoa> = emptyList(),
+    val documentos: List<Documento> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null
 )
@@ -52,15 +54,18 @@ class OccurrenceDetailsViewModel @Inject constructor(
             val occurrenceResult = repository.getOcorrenciaById(id)
             val evidenciasResult = repository.getEvidencias(id)
             val pessoasResult = repository.getPessoasDaOcorrencia(id)
+            val documentosResult = repository.getDocumentosDaOcorrencia(id)
             
             if (occurrenceResult.isSuccess) {
                 val fullOcorrencia = occurrenceResult.getOrThrow()
                 val evidencias = evidenciasResult.getOrDefault(emptyList())
                 val pessoas = pessoasResult.getOrDefault(emptyList())
+                val documentos = documentosResult.getOrDefault(emptyList())
                 _uiState.update { it.copy(
                     occurrence = fullOcorrencia, 
                     evidencias = evidencias, 
                     pessoas = pessoas,
+                    documentos = documentos,
                     isLoading = false
                 ) }
             } else {
@@ -227,6 +232,71 @@ class OccurrenceDetailsViewModel @Inject constructor(
                         append("\"uf\":\"${p.uf ?: ""}\",")
                         append("\"cep\":\"${p.cep ?: ""}\"")
                         append("}")
+                    }
+                    append("],")
+
+                    // Fotos em Base64
+                    append("\"fotosBase64\":[")
+                    var encodedCount = 0
+                    o.fotos.forEach { path ->
+                        val file = File(path)
+                        if (file.exists() && file.isFile) {
+                            try {
+                                val bytes = file.readBytes()
+                                val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                                if (encodedCount > 0) append(",")
+                                append("{")
+                                append("\"nome\":\"${file.name}\",")
+                                append("\"bytes\":\"$base64\"")
+                                append("}")
+                                encodedCount++
+                            } catch (e: Exception) {
+                                android.util.Log.e("JsonExport", "Erro ao codificar imagem: ${e.message}")
+                            }
+                        }
+                    }
+                    append("],")
+
+                    // Evidências
+                    append("\"evidencias\":[")
+                    var encodedEvCount = 0
+                    _uiState.value.evidencias.forEach { ev ->
+                        val file = File(ev.urlStorage)
+                        var base64 = ""
+                        if (file.exists() && file.isFile) {
+                            try {
+                                val bytes = file.readBytes()
+                                base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                            } catch (e: java.lang.Exception) {
+                                android.util.Log.e("JsonExport", "Erro ao ler arquivo de evidencia: ${e.message}")
+                            }
+                        }
+                        
+                        if (encodedEvCount > 0) append(",")
+                        append("{")
+                        append("\"id\":\"${ev.id ?: ""}\",")
+                        append("\"tipo\":\"${ev.tipo}\",")
+                        append("\"hashSha256\":\"${ev.hashSha256}\",")
+                        append("\"latitude\":${ev.latitude ?: "null"},")
+                        append("\"longitude\":${ev.longitude ?: "null"},")
+                        append("\"dataHora\":\"${ev.dataHora}\",")
+                        append("\"usuario\":\"${ev.usuario ?: ""}\",")
+                        append("\"ocrBruto\":\"${ev.ocrBruto?.replace("\"", "\\\"")?.replace("\n", "\\n") ?: ""}\",")
+                        
+                        // Map jsonOcr
+                        append("\"jsonOcr\":{")
+                        var entryIdx = 0
+                        ev.jsonOcr.entries.forEach { entry ->
+                            if (entryIdx > 0) append(",")
+                            append("\"${entry.key}\":\"${entry.value.replace("\"", "\\\"")}\"")
+                            entryIdx++
+                        }
+                        append("},")
+
+                        append("\"fileName\":\"${file.name}\",")
+                        append("\"bytes\":\"$base64\"")
+                        append("}")
+                        encodedEvCount++
                     }
                     append("]")
 

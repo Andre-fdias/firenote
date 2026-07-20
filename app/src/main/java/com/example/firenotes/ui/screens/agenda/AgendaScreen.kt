@@ -25,6 +25,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import com.example.firenotes.data.local.entities.RoomEventoAgenda
 import com.example.firenotes.data.local.entities.RoomTarefa
 import com.example.firenotes.data.service.ProntidaoService
@@ -168,30 +171,32 @@ fun AgendaScreen(
         }
 
         if (showAddTaskDialog) {
-            TaskDialog(initial = null,
-                onConfirm = { titulo, desc, prio, cat ->
-                    viewModel.addTarefa(titulo, date, desc, prio, cat.label)
+            TaskDialog(initial = null, initialDate = date,
+                onConfirm = { titulo, desc, prio, cat, selectedDate, selectedTime ->
+                    viewModel.addTarefa(titulo, selectedDate, desc, prio, cat.label, selectedTime)
                     showAddTaskDialog = false
                 }, onDismiss = { showAddTaskDialog = false })
         }
         editingTask?.let { task ->
-            TaskDialog(initial = task,
-                onConfirm = { titulo, desc, prio, cat ->
-                    viewModel.updateTarefa(task.copy(titulo = titulo, descricao = desc, prioridade = prio.name, categoria = cat.label))
+            val initDate = runCatching { LocalDate.parse(task.data) }.getOrDefault(date)
+            TaskDialog(initial = task, initialDate = initDate,
+                onConfirm = { titulo, desc, prio, cat, selectedDate, selectedTime ->
+                    viewModel.updateTarefa(task.copy(titulo = titulo, descricao = desc, prioridade = prio.name, categoria = cat.label, data = selectedDate.toString(), hora = selectedTime))
                     editingTask = null
                 }, onDismiss = { editingTask = null })
         }
         if (showAddEventDialog) {
-            EventDialog(initial = null, date = date,
-                onConfirm = { titulo, desc, inicio, fim, tipo ->
-                    viewModel.addEvento(titulo, desc, date, inicio, fim, tipo)
+            EventDialog(initial = null, initialDate = date,
+                onConfirm = { titulo, desc, selectedDate, inicio, fim, tipo ->
+                    viewModel.addEvento(titulo, desc, selectedDate, inicio, fim, tipo)
                     showAddEventDialog = false
                 }, onDismiss = { showAddEventDialog = false })
         }
         editingEvent?.let { event ->
-            EventDialog(initial = event, date = date,
-                onConfirm = { titulo, desc, inicio, fim, tipo ->
-                    viewModel.updateEvento(event.copy(titulo = titulo, descricao = desc, horaInicio = inicio, horaFim = fim, tipo = tipo.name))
+            val initDate = runCatching { LocalDate.parse(event.data) }.getOrDefault(date)
+            EventDialog(initial = event, initialDate = initDate,
+                onConfirm = { titulo, desc, selectedDate, inicio, fim, tipo ->
+                    viewModel.updateEvento(event.copy(titulo = titulo, descricao = desc, data = selectedDate.toString(), horaInicio = inicio, horaFim = fim, tipo = tipo.name))
                     editingEvent = null
                 }, onDismiss = { editingEvent = null })
         }
@@ -341,11 +346,46 @@ fun AgendaEventItem(event: RoomEventoAgenda, onDelete: () -> Unit, onEdit: () ->
 }
 
 @Composable
-fun TaskDialog(initial: RoomTarefa?, onConfirm: (String, String?, Prioridade, CategoriaTask) -> Unit, onDismiss: () -> Unit) {
+fun TaskDialog(
+    initial: RoomTarefa?,
+    initialDate: LocalDate,
+    onConfirm: (String, String?, Prioridade, CategoriaTask, LocalDate, String?) -> Unit,
+    onDismiss: () -> Unit
+) {
     var titulo by remember { mutableStateOf(initial?.titulo ?: "") }
     var descricao by remember { mutableStateOf(initial?.descricao ?: "") }
     var prioridade by remember { mutableStateOf(runCatching { Prioridade.valueOf(initial?.prioridade ?: "") }.getOrDefault(Prioridade.MEDIA)) }
     var categoria by remember { mutableStateOf(CategoriaTask.values().firstOrNull { it.label == initial?.categoria } ?: CategoriaTask.OPERACIONAL) }
+    
+    var selectedDate by remember { mutableStateOf(if (initial != null) LocalDate.parse(initial.data) else initialDate) }
+    var selectedTime by remember { mutableStateOf(initial?.hora ?: "") }
+
+    val context = LocalContext.current
+    val datePickerDialog = remember(selectedDate) {
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                selectedDate = LocalDate.of(year, month + 1, dayOfMonth)
+            },
+            selectedDate.year,
+            selectedDate.monthValue - 1,
+            selectedDate.dayOfMonth
+        )
+    }
+
+    val timePickerDialog = remember(selectedTime) {
+        val parsedTime = runCatching { java.time.LocalTime.parse(selectedTime) }.getOrDefault(java.time.LocalTime.now())
+        android.app.TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                selectedTime = String.format("%02d:%02d", hourOfDay, minute)
+            },
+            parsedTime.hour,
+            parsedTime.minute,
+            true
+        )
+    }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Card(modifier = Modifier.fillMaxWidth(0.95f).wrapContentHeight(), shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = FireColors.Surface)) {
@@ -353,6 +393,55 @@ fun TaskDialog(initial: RoomTarefa?, onConfirm: (String, String?, Prioridade, Ca
                 Text(if (initial == null) "📋 Nova Tarefa" else "✏️ Editar Tarefa", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = FireColors.OnBackground)
                 OutlinedTextField(value = titulo, onValueChange = { titulo = it }, label = { Text("Titulo *") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
                 OutlinedTextField(value = descricao, onValueChange = { descricao = it }, label = { Text("Observacoes (opcional)") }, maxLines = 3, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                
+                // Date & Time pickers
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(modifier = Modifier.weight(1f).clickable { datePickerDialog.show() }) {
+                        OutlinedTextField(
+                            value = selectedDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Data") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = FireColors.OnBackground,
+                                disabledBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                                disabledLabelColor = FireColors.OnSurfaceVariant,
+                                disabledLeadingIconColor = FireColors.OnSurfaceVariant
+                            ),
+                            leadingIcon = { Icon(Icons.Default.DateRange, null, modifier = Modifier.size(16.dp)) }
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f).clickable { timePickerDialog.show() }) {
+                        OutlinedTextField(
+                            value = selectedTime,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Hora (opcional)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = FireColors.OnBackground,
+                                disabledBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                                disabledLabelColor = FireColors.OnSurfaceVariant,
+                                disabledLeadingIconColor = FireColors.OnSurfaceVariant,
+                                disabledTrailingIconColor = FireColors.OnSurfaceVariant
+                            ),
+                            leadingIcon = { Icon(Icons.Outlined.AccessTime, null, modifier = Modifier.size(16.dp)) },
+                            trailingIcon = {
+                                if (selectedTime.isNotEmpty()) {
+                                    IconButton(onClick = { selectedTime = "" }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Clear, null, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Prioridade", fontSize = 12.sp, color = FireColors.OnSurfaceVariant, fontWeight = FontWeight.Medium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -365,20 +454,36 @@ fun TaskDialog(initial: RoomTarefa?, onConfirm: (String, String?, Prioridade, Ca
                         }
                     }
                 }
+
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Categoria", fontSize = 12.sp, color = FireColors.OnSurfaceVariant, fontWeight = FontWeight.Medium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         CategoriaTask.values().forEach { cat ->
                             val sel = cat == categoria
-                            FilterChip(selected = sel, onClick = { categoria = cat }, label = { Text("${cat.icon} ${cat.label}", fontSize = 10.sp) }, modifier = Modifier.weight(1f),
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = FireColors.Primary, selectedLabelColor = Color.White, containerColor = FireColors.Primary.copy(alpha=0.08f), labelColor = FireColors.OnSurfaceVariant))
+                            FilterChip(
+                                selected = sel,
+                                onClick = { categoria = cat },
+                                label = { Text("${cat.icon} ${cat.label}", fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = FireColors.Primary,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = FireColors.Primary.copy(alpha=0.08f),
+                                    labelColor = FireColors.OnSurfaceVariant
+                                )
+                            )
                         }
                     }
                 }
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onDismiss) { Text("Cancelar", color = FireColors.OnSurfaceVariant) }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { if (titulo.isNotBlank()) onConfirm(titulo.trim(), descricao.trim().ifBlank { null }, prioridade, categoria) },
+                    Button(onClick = { if (titulo.isNotBlank()) onConfirm(titulo.trim(), descricao.trim().ifBlank { null }, prioridade, categoria, selectedDate, selectedTime.ifBlank { null }) },
                         enabled = titulo.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(6.dp))
                         Text(if (initial == null) "Salvar" else "Atualizar")
@@ -390,52 +495,154 @@ fun TaskDialog(initial: RoomTarefa?, onConfirm: (String, String?, Prioridade, Ca
 }
 
 @Composable
-fun EventDialog(initial: RoomEventoAgenda?, date: LocalDate, onConfirm: (String, String?, String?, String?, TipoEvento) -> Unit, onDismiss: () -> Unit) {
+fun EventDialog(
+    initial: RoomEventoAgenda?,
+    initialDate: LocalDate,
+    onConfirm: (String, String?, LocalDate, String?, String?, TipoEvento) -> Unit,
+    onDismiss: () -> Unit
+) {
     var titulo by remember { mutableStateOf(initial?.titulo ?: "") }
     var descricao by remember { mutableStateOf(initial?.descricao ?: "") }
     var inicio by remember { mutableStateOf(initial?.horaInicio ?: "08:00") }
     var fim by remember { mutableStateOf(initial?.horaFim ?: "09:00") }
     var tipo by remember { mutableStateOf(runCatching { TipoEvento.valueOf(initial?.tipo ?: "") }.getOrDefault(TipoEvento.OUTRO)) }
+    
+    var selectedDate by remember { mutableStateOf(if (initial != null) LocalDate.parse(initial.data) else initialDate) }
+
+    val context = LocalContext.current
+    val datePickerDialog = remember(selectedDate) {
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                selectedDate = LocalDate.of(year, month + 1, dayOfMonth)
+            },
+            selectedDate.year,
+            selectedDate.monthValue - 1,
+            selectedDate.dayOfMonth
+        )
+    }
+
+    val timeInicioPickerDialog = remember(inicio) {
+        val parsedTime = runCatching { java.time.LocalTime.parse(inicio) }.getOrDefault(java.time.LocalTime.of(8, 0))
+        android.app.TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                inicio = String.format("%02d:%02d", hourOfDay, minute)
+            },
+            parsedTime.hour,
+            parsedTime.minute,
+            true
+        )
+    }
+
+    val timeFimPickerDialog = remember(fim) {
+        val parsedTime = runCatching { java.time.LocalTime.parse(fim) }.getOrDefault(java.time.LocalTime.of(9, 0))
+        android.app.TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                fim = String.format("%02d:%02d", hourOfDay, minute)
+            },
+            parsedTime.hour,
+            parsedTime.minute,
+            true
+        )
+    }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Card(modifier = Modifier.fillMaxWidth(0.95f).wrapContentHeight(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = FireColors.Surface)) {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(if (initial == null) "📅 Novo Evento" else "✏️ Editar Evento", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = FireColors.OnBackground)
-                Text(date.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", Locale.forLanguageTag("pt-BR"))).replaceFirstChar { it.uppercase() }, fontSize = 12.sp, color = FireColors.OnSurfaceVariant)
+                
+                // Clickable date picker
+                Box(modifier = Modifier.fillMaxWidth().clickable { datePickerDialog.show() }) {
+                    OutlinedTextField(
+                        value = selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", Locale.forLanguageTag("pt-BR"))).replaceFirstChar { it.uppercase() },
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = false,
+                        label = { Text("Data do Evento") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = FireColors.OnBackground,
+                            disabledBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            disabledLabelColor = FireColors.OnSurfaceVariant,
+                            disabledLeadingIconColor = FireColors.OnSurfaceVariant
+                        ),
+                        leadingIcon = { Icon(Icons.Default.DateRange, null, modifier = Modifier.size(16.dp)) }
+                    )
+                }
+
                 OutlinedTextField(value = titulo, onValueChange = { titulo = it }, label = { Text("Titulo *") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
                 OutlinedTextField(value = descricao, onValueChange = { descricao = it }, label = { Text("Descricao (opcional)") }, maxLines = 3, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(value = inicio, onValueChange = { inicio = it }, label = { Text("Inicio") }, placeholder = { Text("08:00") }, singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), leadingIcon = { Icon(Icons.Outlined.AccessTime, null, modifier = Modifier.size(16.dp)) })
-                    OutlinedTextField(value = fim, onValueChange = { fim = it }, label = { Text("Termino") }, placeholder = { Text("17:00") }, singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), leadingIcon = { Icon(Icons.Outlined.AccessTime, null, modifier = Modifier.size(16.dp)) })
+                    Box(modifier = Modifier.weight(1f).clickable { timeInicioPickerDialog.show() }) {
+                        OutlinedTextField(
+                            value = inicio,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Inicio") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = FireColors.OnBackground,
+                                disabledBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                                disabledLabelColor = FireColors.OnSurfaceVariant,
+                                disabledLeadingIconColor = FireColors.OnSurfaceVariant
+                            ),
+                            leadingIcon = { Icon(Icons.Outlined.AccessTime, null, modifier = Modifier.size(16.dp)) }
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f).clickable { timeFimPickerDialog.show() }) {
+                        OutlinedTextField(
+                            value = fim,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Termino") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = FireColors.OnBackground,
+                                disabledBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                                disabledLabelColor = FireColors.OnSurfaceVariant,
+                                disabledLeadingIconColor = FireColors.OnSurfaceVariant
+                            ),
+                            leadingIcon = { Icon(Icons.Outlined.AccessTime, null, modifier = Modifier.size(16.dp)) }
+                        )
+                    }
                 }
+
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Tipo de evento", fontSize = 12.sp, color = FireColors.OnSurfaceVariant, fontWeight = FontWeight.Medium)
-                    val tipoRows = TipoEvento.values().toList().chunked(3)
-                    tipoRows.forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                            row.forEach { t ->
-                                FilterChip(
-                                    selected = t == tipo,
-                                    onClick = { tipo = t },
-                                    label = { Text("${t.icon} ${t.label}", fontSize = 10.sp) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = FireColors.Primary,
-                                        selectedLabelColor = Color.White,
-                                        containerColor = FireColors.Primary.copy(alpha = 0.08f),
-                                        labelColor = FireColors.OnSurfaceVariant
-                                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TipoEvento.values().forEach { t ->
+                            val sel = t == tipo
+                            FilterChip(
+                                selected = t == tipo,
+                                onClick = { tipo = t },
+                                label = { Text("${t.icon} ${t.label}", fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = FireColors.Primary,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = FireColors.Primary.copy(alpha = 0.08f),
+                                    labelColor = FireColors.OnSurfaceVariant
                                 )
-                            }
-                            // Preenche itens faltantes na última linha
-                            val missing = 3 - row.size
-                            if (missing > 0) repeat(missing) { Spacer(modifier = Modifier.weight(1f)) }
+                            )
                         }
                     }
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onDismiss) { Text("Cancelar", color = FireColors.OnSurfaceVariant) }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { if (titulo.isNotBlank()) onConfirm(titulo.trim(), descricao.trim().ifBlank { null }, inicio.trim().ifBlank { null }, fim.trim().ifBlank { null }, tipo) },
+                    Button(onClick = { if (titulo.isNotBlank()) onConfirm(titulo.trim(), descricao.trim().ifBlank { null }, selectedDate, inicio.trim().ifBlank { null }, fim.trim().ifBlank { null }, tipo) },
                         enabled = titulo.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(6.dp))
                         Text(if (initial == null) "Salvar" else "Atualizar")

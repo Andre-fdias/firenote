@@ -70,6 +70,8 @@ class ReportsViewModel @Inject constructor(
         _uiState.update { it.copy(isExporting = true, exportMessage = null) }
         viewModelScope.launch {
             try {
+                // Carregar ocorrência atualizada do banco para garantir que todas as viaturas/militares estejam presentes
+                val occurrence = repository.getOcorrenciaById(occurrence.id ?: "").getOrDefault(occurrence)
                 // Carregar pessoas e evidências associadas antes de gerar o PDF
                 val pessoas = repository.getPessoasDaOcorrencia(occurrence.id ?: "").getOrDefault(emptyList())
                 val evidencias = repository.getEvidencias(occurrence.id ?: "").getOrDefault(emptyList())

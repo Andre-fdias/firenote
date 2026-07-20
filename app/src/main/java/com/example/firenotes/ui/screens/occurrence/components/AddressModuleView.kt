@@ -396,15 +396,6 @@ fun AddressModuleView(
                 }
             }
 
-            // Galeria de Mídia do Local
-            FireGalleryCard(
-                title = "📸 Galeria de Fotos e Delineação do Local",
-                category = "Local",
-                images = galleryImages,
-                onImageClick = onImageClick,
-                modifier = Modifier.fillMaxWidth()
-            )
-
             Spacer(modifier = Modifier.height(FireSpacing.ExtraSmall))
 
             // Ação de Voltar

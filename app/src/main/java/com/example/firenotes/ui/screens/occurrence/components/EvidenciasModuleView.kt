@@ -22,6 +22,7 @@ import com.example.firenotes.ui.screens.occurrence.OccurrenceFormUiState
 fun EvidenciasModuleView(
     uiState: OccurrenceFormUiState,
     onTakePhoto: () -> Unit,
+    onPickPhoto: () -> Unit,
     galleryImages: List<GalleryImage>,
     onImageClick: (GalleryImage) -> Unit,
     onBack: () -> Unit
@@ -64,15 +65,28 @@ fun EvidenciasModuleView(
                 }
             }
 
-            // Action Button
-            FireButton(
-                onClick = onTakePhoto,
-                text = "TIRAR FOTO (EVIDÊNCIA)",
-                icon = FireIcons.PhotoCamera,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-            )
+            // Action Buttons (Tirar Foto & Buscar Galeria)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
+            ) {
+                FireButton(
+                    onClick = onTakePhoto,
+                    text = "TIRAR FOTO",
+                    icon = FireIcons.PhotoCamera,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                )
+                FireButton(
+                    onClick = onPickPhoto,
+                    text = "BUSCAR GALERIA",
+                    icon = FireIcons.PhotoLibrary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                )
+            }
 
             // Gallery
             Box(

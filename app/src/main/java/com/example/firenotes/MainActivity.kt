@@ -1,6 +1,8 @@
 package com.example.firenotes
 
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -55,9 +57,34 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     @Inject
     lateinit var settingsRepository: com.example.firenotes.domain.repository.SettingsRepository
 
+    @Inject
+    lateinit var occurrenceRepository: com.example.firenotes.domain.repository.OcorrenciaRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.example.firenotes.util.LogHelper.init(applicationContext)
+
+        // Register notifications channel
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channelId = "firenotes_notifications"
+            val channel = android.app.NotificationChannel(
+                channelId,
+                "Notificacoes de Compromissos",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifica o usuario sobre eventos e tarefas agendadas"
+            }
+            val manager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+
+        // Request runtime permission for notifications on Android 13+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
                 lightScrim = android.graphics.Color.TRANSPARENT,
@@ -68,6 +95,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 darkScrim = android.graphics.Color.TRANSPARENT
             )
         )
+        handleIncomingIntent(intent)
         setContent {
             val theme by settingsRepository.themeFlow.collectAsState(initial = "Automático")
             val isDarkTheme = when (theme) {
@@ -203,8 +231,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     onNavigateBack = {
                                         navController.popBackStack()
                                     },
-                                    onNavigateToDocumentScanner = { occurrenceId ->
-                                        navController.navigate(Screen.DocumentScanner.createRoute(occurrenceId))
+                                    onNavigateToDocumentScanner = { occurrenceId, documentId ->
+                                        navController.navigate(Screen.DocumentScanner.createRoute(occurrenceId, documentId))
                                     }
                                 )
                             }
@@ -239,19 +267,28 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     onNavigateBack = {
                                         navController.popBackStack()
                                     },
-                                    onNavigateToDocumentScanner = { occurrenceId ->
-                                        navController.navigate(Screen.DocumentScanner.createRoute(occurrenceId))
+                                    onNavigateToDocumentScanner = { occurrenceId, documentId ->
+                                        navController.navigate(Screen.DocumentScanner.createRoute(occurrenceId, documentId))
                                     }
                                 )
                             }
                             composable(
                                 route = Screen.DocumentScanner.route,
-                                arguments = listOf(androidx.navigation.navArgument("occurrenceId") { type = androidx.navigation.NavType.StringType })
+                                arguments = listOf(
+                                    androidx.navigation.navArgument("occurrenceId") { type = androidx.navigation.NavType.StringType },
+                                    androidx.navigation.navArgument("documentId") {
+                                        type = androidx.navigation.NavType.StringType
+                                        nullable = true
+                                        defaultValue = null
+                                    }
+                                )
                             ) { backStackEntry ->
                                 val id = backStackEntry.arguments?.getString("occurrenceId").orEmpty()
+                                val docId = backStackEntry.arguments?.getString("documentId")
                                 val docViewModel: PersonIdentificationViewModel = hiltViewModel()
                                 PersonIdentificationScreen(
                                     occurrenceId = id,
+                                    documentId = docId,
                                     viewModel = docViewModel,
                                     onNavigateBack = { navController.popBackStack() }
                                 )
@@ -336,5 +373,55 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             .build()
 
         biometricPrompt.authenticate(promptInfo)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: android.content.Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        val type = intent.type
+
+        val uri: android.net.Uri? = when (action) {
+            android.content.Intent.ACTION_SEND -> {
+                if (type == "application/json" || type == "*/*") {
+                    intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM) as? android.net.Uri
+                } else null
+            }
+            android.content.Intent.ACTION_VIEW -> {
+                intent.data
+            }
+            else -> null
+        }
+
+        uri?.let { inputUri ->
+            lifecycleScope.launch {
+                try {
+                    contentResolver.openInputStream(inputUri)?.bufferedReader()?.use { reader ->
+                        val jsonStr = reader.readText()
+                        com.example.firenotes.util.JsonImportHelper.importOccurrenceFromJson(jsonStr, occurrenceRepository).fold(
+                            onSuccess = {
+                                runOnUiThread {
+                                    android.widget.Toast.makeText(this@MainActivity, "Ocorrência recebida e importada com sucesso!", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            onFailure = { e ->
+                                runOnUiThread {
+                                    android.widget.Toast.makeText(this@MainActivity, "Erro ao importar ocorrência recebida: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        )
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        android.widget.Toast.makeText(this@MainActivity, "Erro ao ler arquivo recebido: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,39 +1,53 @@
 package com.example.firenotes.ui.screens.occurrence.dialogs
 
-import com.example.firenotes.ui.screens.occurrence.OccurrenceFormUiState
-import com.example.firenotes.ui.screens.occurrence.models.FormStage
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import com.example.firenotes.domain.model.Pessoa
+import com.example.firenotes.domain.model.VeiculoEnvolvido
 import com.example.firenotes.domain.repository.OcrDocumentResult
-import com.example.firenotes.ui.designsystem.components.buttons.FireButton
-import com.example.firenotes.ui.designsystem.components.dialogs.FireDialog
-import com.example.firenotes.ui.designsystem.components.buttons.FireTextButton
 import com.example.firenotes.ui.designsystem.colors.FireColors
+import com.example.firenotes.ui.designsystem.components.buttons.FireButton
+import com.example.firenotes.ui.designsystem.components.buttons.FireTextButton
+import com.example.firenotes.ui.designsystem.components.dialogs.FireDialog
 import com.example.firenotes.ui.designsystem.icons.FireIcons
 import com.example.firenotes.ui.designsystem.spacing.FireSpacing
 import com.example.firenotes.ui.designsystem.typography.FireTypography
+import com.example.firenotes.ui.screens.occurrence.utils.FipeApiClient
+import com.example.firenotes.ui.screens.occurrence.utils.FipeBrand
+import com.example.firenotes.ui.screens.occurrence.utils.FipeModel
+import com.example.firenotes.ui.screens.occurrence.utils.FipeYear
+import com.example.firenotes.ui.screens.occurrence.utils.VehicleCatalog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddVehicleDialog(
-    ocrResult: OcrDocumentResult?,
+    veiculoParaEditar: VeiculoEnvolvido? = null,
+    ocrResult: OcrDocumentResult? = null,
     pessoasDisponiveis: List<Pessoa>,
-    crlvImage: Uri?,
+    crlvImage: Uri? = null,
     onDismiss: () -> Unit,
     onConfirm: (
         placa: String,
@@ -46,7 +60,8 @@ fun AddVehicleDialog(
         versao: String,
         exercicio: String,
         crlvUri: Uri?
-    ) -> Unit
+    ) -> Unit,
+    onScanCrlvClick: () -> Unit
 ) {
     // Estados dos campos
     var placa by remember { mutableStateOf("") }
@@ -59,39 +74,169 @@ fun AddVehicleDialog(
     var versao by remember { mutableStateOf("") }
     var exercicio by remember { mutableStateOf("") }
     var selectedPessoaId by remember { mutableStateOf<String?>(null) }
+    var currentCrlvImageUri by remember { mutableStateOf<Uri?>(null) }
     
-    // Estados de UI
+    // Estados de UI auxiliares
     var expandedPessoaDropdown by remember { mutableStateOf(false) }
-    var expandedCorDropdown by remember { mutableStateOf(false) }
+    var expandedAnoFabDropdown by remember { mutableStateOf(false) }
+    var expandedAnoModDropdown by remember { mutableStateOf(false) }
+    var expandedFipeYearDropdown by remember { mutableStateOf(false) }
     var placaError by remember { mutableStateOf<String?>(null) }
-    var anoError by remember { mutableStateOf<String?>(null) }
     
-    // Preencher com OCR
-    LaunchedEffect(ocrResult) {
-        ocrResult?.let {
-            placa = it.extractedFields["placa"]?.uppercase() ?: ""
-            modelo = it.extractedFields["modelo"] ?: it.extractedFields["marca_modelo"] ?: ""
-            cor = it.extractedFields["cor"] ?: ""
-            chassi = it.extractedFields["chassi"]?.uppercase() ?: ""
-            marca = it.extractedFields["marca"] ?: ""
-            versao = it.extractedFields["versao"] ?: ""
-            exercicio = it.extractedFields["exercicio"] ?: ""
+    // Estados de busca Marca/Modelo
+    var searchMarca by remember { mutableStateOf("") }
+    var searchModelo by remember { mutableStateOf("") }
+    var expandedMarca by remember { mutableStateOf(false) }
+    var expandedModelo by remember { mutableStateOf(false) }
+
+    // Estados da API FIPE
+    var fipeBrands by remember { mutableStateOf<List<FipeBrand>>(emptyList()) }
+    var fipeModels by remember { mutableStateOf<List<FipeModel>>(emptyList()) }
+    var fipeYears by remember { mutableStateOf<List<FipeYear>>(emptyList()) }
+    var selectedFipeBrandId by remember { mutableStateOf<String?>(null) }
+    var selectedFipeModelId by remember { mutableStateOf<String?>(null) }
+    var isLoadingBrands by remember { mutableStateOf(false) }
+    var isLoadingModels by remember { mutableStateOf(false) }
+    var isLoadingYears by remember { mutableStateOf(false) }
+
+    // Buscar Marcas ao inicializar
+    LaunchedEffect(Unit) {
+        isLoadingBrands = true
+        try {
+            fipeBrands = FipeApiClient.getBrands()
+        } catch (e: Exception) {
+            android.util.Log.e("FipeAPI", "Erro ao carregar marcas da API: ${e.localizedMessage}")
+        } finally {
+            isLoadingBrands = false
+        }
+    }
+
+    // Buscar Modelos quando a marca for selecionada
+    LaunchedEffect(selectedFipeBrandId) {
+        if (!selectedFipeBrandId.isNullOrBlank()) {
+            isLoadingModels = true
+            try {
+                fipeModels = FipeApiClient.getModels(selectedFipeBrandId!!)
+            } catch (e: Exception) {
+                android.util.Log.e("FipeAPI", "Erro ao carregar modelos da API: ${e.localizedMessage}")
+                fipeModels = emptyList()
+            } finally {
+                isLoadingModels = false
+            }
+        } else {
+            fipeModels = emptyList()
+        }
+    }
+
+    // Buscar Anos quando o modelo for selecionado
+    LaunchedEffect(selectedFipeBrandId, selectedFipeModelId) {
+        if (!selectedFipeBrandId.isNullOrBlank() && !selectedFipeModelId.isNullOrBlank()) {
+            isLoadingYears = true
+            try {
+                fipeYears = FipeApiClient.getYears(selectedFipeBrandId!!, selectedFipeModelId!!)
+            } catch (e: Exception) {
+                android.util.Log.e("FipeAPI", "Erro ao carregar anos da API: ${e.localizedMessage}")
+                fipeYears = emptyList()
+            } finally {
+                isLoadingYears = false
+            }
+        } else {
+            fipeYears = emptyList()
+        }
+    }
+
+    // Auto-mapeamento de IDs ao editar veículo existente
+    LaunchedEffect(fipeBrands, veiculoParaEditar) {
+        if (veiculoParaEditar != null && fipeBrands.isNotEmpty() && selectedFipeBrandId == null) {
+            val matchingBrand = fipeBrands.find { it.nome.equals(veiculoParaEditar.marca, ignoreCase = true) }
+            if (matchingBrand != null) {
+                selectedFipeBrandId = matchingBrand.codigo
+            }
+        }
+    }
+
+    LaunchedEffect(fipeModels, veiculoParaEditar) {
+        if (veiculoParaEditar != null && fipeModels.isNotEmpty() && selectedFipeModelId == null) {
+            val matchingModel = fipeModels.find { it.nome.equals(veiculoParaEditar.modelo, ignoreCase = true) }
+            if (matchingModel != null) {
+                selectedFipeModelId = matchingModel.codigo
+            }
+        }
+    }
+
+    // Preencher com OCR ou Dados de Edição
+    LaunchedEffect(veiculoParaEditar, ocrResult, crlvImage) {
+        if (ocrResult != null) {
+            val extractedPlaca = ocrResult.extractedFields["placa"]?.uppercase() ?: ""
+            if (extractedPlaca.isNotBlank()) placa = extractedPlaca
             
-            val anoFab = it.extractedFields["ano_fabricacao"]?.toIntOrNull()
-            val anoMod = it.extractedFields["ano_modelo"]?.toIntOrNull()
+            val extractedMarca = ocrResult.extractedFields["marca"] ?: ocrResult.extractedFields["marca_modelo"]?.substringBefore("/")?.trim() ?: ""
+            if (extractedMarca.isNotBlank()) {
+                marca = extractedMarca
+                searchMarca = extractedMarca
+            }
+            
+            val extractedModelo = ocrResult.extractedFields["modelo"] ?: ocrResult.extractedFields["marca_modelo"]?.substringAfter("/")?.trim() ?: ""
+            if (extractedModelo.isNotBlank()) {
+                modelo = extractedModelo
+                searchModelo = extractedModelo
+            }
+            
+            val extractedCor = ocrResult.extractedFields["cor"] ?: ""
+            if (extractedCor.isNotBlank()) cor = extractedCor
+            
+            val extractedChassi = ocrResult.extractedFields["chassi"]?.uppercase() ?: ""
+            if (extractedChassi.isNotBlank()) chassi = extractedChassi
+            
+            val extractedEx = ocrResult.extractedFields["exercicio"] ?: ""
+            if (extractedEx.isNotBlank()) exercicio = extractedEx
+            
+            val anoFab = ocrResult.extractedFields["ano_fabricacao"]?.toIntOrNull()
+            val anoMod = ocrResult.extractedFields["ano_modelo"]?.toIntOrNull()
             if (anoFab != null) anoFabricacao = anoFab.toString()
             if (anoMod != null) anoModelo = anoMod.toString()
+            if (crlvImage != null) {
+                currentCrlvImageUri = crlvImage
+            }
+        } else if (veiculoParaEditar != null) {
+            placa = veiculoParaEditar.placa
+            modelo = veiculoParaEditar.modelo
+            searchModelo = veiculoParaEditar.modelo
+            cor = veiculoParaEditar.cor
+            chassi = veiculoParaEditar.chassi
+            
+            val parts = veiculoParaEditar.ano.split("/")
+            anoFabricacao = veiculoParaEditar.anoFabricacao?.toString() ?: parts.getOrNull(0)?.trim() ?: ""
+            anoModelo = veiculoParaEditar.anoModelo?.toString() ?: parts.getOrNull(1)?.trim() ?: ""
+            
+            marca = veiculoParaEditar.marca
+            searchMarca = veiculoParaEditar.marca
+            versao = veiculoParaEditar.versao
+            exercicio = veiculoParaEditar.exercicio
+            selectedPessoaId = veiculoParaEditar.proprietarioId
+            currentCrlvImageUri = if (!veiculoParaEditar.urlCrlv.isNullOrBlank()) Uri.parse(veiculoParaEditar.urlCrlv) else null
         }
     }
     
-    // Cores disponíveis
-    val cores = listOf(
-        "Branco", "Preto", "Prata", "Cinza", "Vermelho",
-        "Azul", "Verde", "Amarelo", "Laranja", "Marrom",
-        "Bege", "Dourado", "Rosa", "Roxo", "Outra"
+    // Cores comuns para os chips interativos
+    val commonColors = listOf(
+        "Branco" to "#FFFFFF",
+        "Preto" to "#000000",
+        "Prata" to "#C0C0C0",
+        "Cinza" to "#808080",
+        "Vermelho" to "#D32F2F",
+        "Azul" to "#1976D2",
+        "Verde" to "#388E3C",
+        "Amarelo" to "#FBC02D",
+        "Laranja" to "#F57C00",
+        "Marrom" to "#795548"
     )
+
+    // Filtros de ano (Offline)
+    val currentYear = java.time.Year.now().value
+    val yearsRange = remember { ((currentYear + 1) downTo 1970).map { it.toString() } }
     
-    // Validações
+    // Validação de Placa Mercosul ou Tradicional
     fun validatePlaca(input: String): Boolean {
         val clean = input.uppercase().replace(Regex("[^A-Z0-9]"), "")
         return clean.length == 7 && (
@@ -100,30 +245,43 @@ fun AddVehicleDialog(
         )
     }
     
-    fun validateAno(input: String): Boolean {
-        val anoVal = input.toIntOrNull() ?: return false
-        val anoAtual = java.time.Year.now().value
-        return anoVal in 1900..(anoAtual + 1)
-    }
-    
-    val isFormValid = remember(
-        placa, modelo, cor, chassi, anoFabricacao, anoModelo,
-        selectedPessoaId, placaError, anoError
-    ) {
+    val isFormValid = remember(placa, modelo, cor, chassi, placaError) {
         placa.isNotBlank() &&
         validatePlaca(placa) &&
         modelo.isNotBlank() &&
         cor.isNotBlank() &&
         chassi.isNotBlank() &&
-        (anoFabricacao.isBlank() || validateAno(anoFabricacao)) &&
-        (anoModelo.isBlank() || validateAno(anoModelo)) &&
-        placaError == null &&
-        anoError == null
+        placaError == null
+    }
+
+    // Filtragem de marcas (Online/Offline)
+    val filteredBrands = remember(fipeBrands, searchMarca) {
+        if (fipeBrands.isNotEmpty()) {
+            fipeBrands.filter { it.nome.contains(searchMarca, ignoreCase = true) }
+        } else {
+            emptyList()
+        }
+    }
+    val filteredOfflineBrands = remember(searchMarca) {
+        VehicleCatalog.brands.filter { it.contains(searchMarca, ignoreCase = true) }
+    }
+
+    // Filtragem de modelos (Online/Offline)
+    val filteredModels = remember(fipeModels, searchModelo) {
+        if (fipeModels.isNotEmpty()) {
+            fipeModels.filter { it.nome.contains(searchModelo, ignoreCase = true) }
+        } else {
+            emptyList()
+        }
+    }
+    val filteredOfflineModels = remember(marca, searchModelo) {
+        val offline = VehicleCatalog.modelsByBrand[marca] ?: emptyList()
+        offline.filter { it.contains(searchModelo, ignoreCase = true) }
     }
     
     FireDialog(
         onDismissRequest = onDismiss,
-        title = "Registrar Veículo",
+        title = if (veiculoParaEditar != null) "Editar Veículo" else "Registrar Veículo",
         confirmButton = {
             FireButton(
                 enabled = isFormValid,
@@ -146,10 +304,10 @@ fun AddVehicleDialog(
                         marca,
                         versao,
                         exercicio,
-                        crlvImage
+                        currentCrlvImageUri
                     )
                 },
-                text = "Confirmar",
+                text = "Salvar",
                 containerColor = FireColors.Primary
             )
         },
@@ -163,6 +321,88 @@ fun AddVehicleDialog(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
         ) {
+            // Real-time Mercosul Plate Preview (Premium aesthetic)
+            if (placa.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .border(2.dp, Color(0xFF263238), RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White)
+                            .width(180.dp)
+                    ) {
+                        // Tarja azul Mercosul
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF0D47A1))
+                                .padding(vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "BRASIL",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 2.sp
+                            )
+                        }
+                        // Dígitos da Placa
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = placa.uppercase(),
+                                color = Color.Black,
+                                style = FireTypography.Title,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Scanner CRLV (OCR) Button inside Modal
+            Card(
+                colors = CardDefaults.cardColors(containerColor = FireColors.Primary.copy(alpha = 0.05f)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, FireColors.Primary.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onScanCrlvClick() }
+                        .padding(FireSpacing.Medium),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = FireIcons.PhotoCamera,
+                        contentDescription = null,
+                        tint = FireColors.Primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(FireSpacing.Small))
+                    Text(
+                        text = "ESCANEAR CRLV VIA OCR (CÂMERA)",
+                        style = FireTypography.LabelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = FireColors.Primary
+                    )
+                }
+            }
+
             // Card: Identificação do Veículo
             Card(
                 colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.4f)),
@@ -177,7 +417,7 @@ fun AddVehicleDialog(
                         Text("🚗", style = FireTypography.Title)
                         Spacer(modifier = Modifier.width(FireSpacing.Small))
                         Text(
-                            "Identificação do Veículo",
+                            "Dados do Veículo",
                             style = FireTypography.Title,
                             fontWeight = FontWeight.Bold,
                             color = FireColors.Primary
@@ -201,7 +441,7 @@ fun AddVehicleDialog(
                             if (placaError != null) {
                                 Text(placaError!!, color = FireColors.Error)
                             } else {
-                                Text("Formato Mercosul ou tradicional", style = FireTypography.LabelSmall)
+                                Text("Mercosul ou tradicional", style = FireTypography.LabelSmall)
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -220,36 +460,36 @@ fun AddVehicleDialog(
                         }
                     )
                     
-                    // Modelo
-                    OutlinedTextField(
-                        value = modelo,
-                        onValueChange = { modelo = it },
-                        label = { Text("Modelo/Marca", style = FireTypography.BodyMedium) },
-                        placeholder = { Text("Ex: Corolla, HB20, Onix", style = FireTypography.BodyMedium) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = FireColors.Primary,
-                            unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    
-                    // Cor com dropdown
+                    // Marca (FIPE / Catalog Offline)
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
-                            value = cor,
-                            onValueChange = { cor = it },
-                            label = { Text("Cor", style = FireTypography.BodyMedium) },
-                            placeholder = { Text("Selecione ou digite", style = FireTypography.BodyMedium) },
+                            value = searchMarca,
+                            onValueChange = { 
+                                searchMarca = it
+                                marca = it
+                                expandedMarca = true
+                                selectedFipeBrandId = null
+                            },
+                            label = { Text("Marca", style = FireTypography.BodyMedium) },
+                            placeholder = { Text("Ex: Fiat, Chevrolet, Volkswagen", style = FireTypography.BodyMedium) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             trailingIcon = {
-                                IconButton(onClick = { expandedCorDropdown = !expandedCorDropdown }) {
-                                    Icon(
-                                        imageVector = if (expandedCorDropdown) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
-                                        contentDescription = null
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (isLoadingBrands) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = FireColors.Primary
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    IconButton(onClick = { expandedMarca = !expandedMarca }) {
+                                        Icon(
+                                            imageVector = if (expandedMarca) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
+                                            contentDescription = null
+                                        )
+                                    }
                                 }
                             },
                             colors = OutlinedTextFieldDefaults.colors(
@@ -259,52 +499,195 @@ fun AddVehicleDialog(
                             shape = RoundedCornerShape(12.dp)
                         )
                         DropdownMenu(
-                            expanded = expandedCorDropdown,
-                            onDismissRequest = { expandedCorDropdown = false },
+                            expanded = expandedMarca,
+                            onDismissRequest = { expandedMarca = false },
+                            properties = PopupProperties(focusable = false),
                             modifier = Modifier.fillMaxWidth(0.9f)
                         ) {
-                            cores.forEach { corItem ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(16.dp)
-                                                    .background(
-                                                        color = Color(android.graphics.Color.parseColor(
-                                                            when(corItem.lowercase()) {
-                                                                "branco" -> "#FFFFFF"
-                                                                "preto" -> "#000000"
-                                                                "prata" -> "#C0C0C0"
-                                                                "cinza" -> "#808080"
-                                                                "vermelho" -> "#FF0000"
-                                                                "azul" -> "#0000FF"
-                                                                "verde" -> "#008000"
-                                                                "amarelo" -> "#FFFF00"
-                                                                "laranja" -> "#FFA500"
-                                                                "marrom" -> "#8B4513"
-                                                                "bege" -> "#F5F5DC"
-                                                                "dourado" -> "#FFD700"
-                                                                "rosa" -> "#FF69B4"
-                                                                "roxo" -> "#800080"
-                                                                else -> "#CCCCCC"
-                                                            }
-                                                        )),
-                                                        shape = CircleShape
-                                                    )
-                                                    .border(1.dp, Color.Gray, CircleShape)
-                                            )
-                                            Spacer(modifier = Modifier.width(FireSpacing.Small))
-                                            Text(corItem)
+                            if (fipeBrands.isNotEmpty()) {
+                                // Exibir marcas carregadas da API FIPE
+                                filteredBrands.take(7).forEach { brandItem ->
+                                    DropdownMenuItem(
+                                        text = { Text(brandItem.nome) },
+                                        onClick = {
+                                            searchMarca = brandItem.nome
+                                            marca = brandItem.nome
+                                            selectedFipeBrandId = brandItem.codigo
+                                            expandedMarca = false
+                                            // Reset Modelo
+                                            modelo = ""
+                                            searchModelo = ""
+                                            selectedFipeModelId = null
+                                            fipeYears = emptyList()
                                         }
-                                    },
-                                    onClick = {
-                                        cor = corItem
-                                        expandedCorDropdown = false
-                                    }
+                                    )
+                                }
+                            } else {
+                                // Fallback para catálogo local offline
+                                filteredOfflineBrands.take(7).forEach { brandItem ->
+                                    DropdownMenuItem(
+                                        text = { Text(brandItem) },
+                                        onClick = {
+                                            searchMarca = brandItem
+                                            marca = brandItem
+                                            selectedFipeBrandId = null
+                                            expandedMarca = false
+                                            // Reset Modelo
+                                            modelo = ""
+                                            searchModelo = ""
+                                            selectedFipeModelId = null
+                                            fipeYears = emptyList()
+                                        }
+                                    )
+                                }
+                            }
+                            if ((fipeBrands.isNotEmpty() && filteredBrands.isEmpty() && searchMarca.isNotBlank()) ||
+                                (fipeBrands.isEmpty() && filteredOfflineBrands.isEmpty() && searchMarca.isNotBlank())) {
+                                DropdownMenuItem(
+                                    text = { Text("Usar \"$searchMarca\"") },
+                                    onClick = { expandedMarca = false }
                                 )
                             }
                         }
+                    }
+                    
+                    // Modelo (FIPE / Catalog Offline)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = searchModelo,
+                            onValueChange = { 
+                                searchModelo = it
+                                modelo = it
+                                expandedModelo = true
+                                selectedFipeModelId = null
+                            },
+                            label = { Text("Modelo", style = FireTypography.BodyMedium) },
+                            placeholder = { Text("Ex: Onix, Palio, Corolla", style = FireTypography.BodyMedium) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            trailingIcon = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (isLoadingModels) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = FireColors.Primary
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    IconButton(onClick = { expandedModelo = !expandedModelo }) {
+                                        Icon(
+                                            imageVector = if (expandedModelo) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
+                                            contentDescription = null
+                                        )
+                                    }
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FireColors.Primary,
+                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        DropdownMenu(
+                            expanded = expandedModelo,
+                            onDismissRequest = { expandedModelo = false },
+                            properties = PopupProperties(focusable = false),
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            if (fipeModels.isNotEmpty()) {
+                                // Exibir modelos carregados da API FIPE
+                                filteredModels.take(8).forEach { modelItem ->
+                                    DropdownMenuItem(
+                                        text = { Text(modelItem.nome) },
+                                        onClick = {
+                                            searchModelo = modelItem.nome
+                                            modelo = modelItem.nome
+                                            selectedFipeModelId = modelItem.codigo
+                                            expandedModelo = false
+                                            fipeYears = emptyList()
+                                        }
+                                    )
+                                }
+                            } else {
+                                // Fallback para catálogo local offline
+                                filteredOfflineModels.take(8).forEach { modelItem ->
+                                    DropdownMenuItem(
+                                        text = { Text(modelItem) },
+                                        onClick = {
+                                            searchModelo = modelItem
+                                            modelo = modelItem
+                                            selectedFipeModelId = null
+                                            expandedModelo = false
+                                            fipeYears = emptyList()
+                                        }
+                                    )
+                                }
+                            }
+                            if ((fipeModels.isNotEmpty() && filteredModels.isEmpty() && searchModelo.isNotBlank()) ||
+                                (fipeModels.isEmpty() && filteredOfflineModels.isEmpty() && searchModelo.isNotBlank())) {
+                                DropdownMenuItem(
+                                    text = { Text("Usar \"$searchModelo\"") },
+                                    onClick = { expandedModelo = false }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Color selection Section (Chips + Custom text input)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Selecione a Cor",
+                            style = FireTypography.LabelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = FireColors.OnSurfaceVariant
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            items(commonColors) { (name, hex) ->
+                                val isSelected = cor.equals(name, ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(android.graphics.Color.parseColor(hex)))
+                                        .border(
+                                            width = if (isSelected) 3.dp else 1.dp,
+                                            color = if (isSelected) FireColors.Primary else Color.LightGray,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { cor = name },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = if (name == "Branco" || name == "Amarelo") Color.Black else Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        OutlinedTextField(
+                            value = cor,
+                            onValueChange = { cor = it },
+                            label = { Text("Cor Customizada", style = FireTypography.BodyMedium) },
+                            placeholder = { Text("Branco, Preto, etc.", style = FireTypography.BodyMedium) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FireColors.Primary,
+                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
                     }
                     
                     // Chassi
@@ -322,63 +705,149 @@ fun AddVehicleDialog(
                         shape = RoundedCornerShape(12.dp)
                     )
                     
-                    // Ano com validação
+                    // Ano FIPE (se carregado da API)
+                    if (fipeYears.isNotEmpty() && !selectedFipeModelId.isNullOrBlank()) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            val fipeSelectedYear = fipeYears.find { y ->
+                                val yr = y.nome.filter { it.isDigit() }.take(4)
+                                yr == anoFabricacao || yr == anoModelo
+                            }?.nome ?: ""
+
+                            OutlinedTextField(
+                                value = fipeSelectedYear,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Ano e Combustível (FIPE)", style = FireTypography.BodyMedium) },
+                                modifier = Modifier.fillMaxWidth(),
+                                trailingIcon = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (isLoadingYears) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                                color = FireColors.Primary
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        IconButton(onClick = { expandedFipeYearDropdown = !expandedFipeYearDropdown }) {
+                                            Icon(
+                                                imageVector = if (expandedFipeYearDropdown) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    }
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = FireColors.Primary,
+                                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            DropdownMenu(
+                                expanded = expandedFipeYearDropdown,
+                                onDismissRequest = { expandedFipeYearDropdown = false },
+                                modifier = Modifier.heightIn(max = 200.dp)
+                            ) {
+                                fipeYears.forEach { y ->
+                                    DropdownMenuItem(
+                                        text = { Text(y.nome) },
+                                        onClick = {
+                                            val digits = y.nome.filter { it.isDigit() }
+                                            val yr = if (digits.length >= 4) digits.take(4) else digits
+                                            if (yr.isNotBlank()) {
+                                                anoFabricacao = yr
+                                                anoModelo = yr
+                                            }
+                                            expandedFipeYearDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Ano Fabricação & Ano Modelo (Dropdowns de Fallback / Especificação manual)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
                     ) {
-                        OutlinedTextField(
-                            value = anoFabricacao,
-                            onValueChange = { 
-                                val digits = it.filter { char -> char.isDigit() }
-                                if (digits.length <= 4) {
-                                    anoFabricacao = digits
-                                    anoError = if (digits.isNotBlank() && !validateAno(digits)) {
-                                        "Ano inválido"
-                                    } else null
+                        // Ano Fabricação Select
+                        Box(modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                value = anoFabricacao,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Ano Fab.", style = FireTypography.BodyMedium) },
+                                modifier = Modifier.fillMaxWidth(),
+                                trailingIcon = {
+                                    IconButton(onClick = { expandedAnoFabDropdown = !expandedAnoFabDropdown }) {
+                                        Icon(
+                                            imageVector = if (expandedAnoFabDropdown) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
+                                            contentDescription = null
+                                        )
+                                    }
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = FireColors.Primary,
+                                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            DropdownMenu(
+                                expanded = expandedAnoFabDropdown,
+                                onDismissRequest = { expandedAnoFabDropdown = false },
+                                modifier = Modifier.heightIn(max = 200.dp)
+                            ) {
+                                yearsRange.forEach { y ->
+                                    DropdownMenuItem(
+                                        text = { Text(y) },
+                                        onClick = {
+                                            anoFabricacao = y
+                                            expandedAnoFabDropdown = false
+                                        }
+                                    )
                                 }
-                            },
-                            label = { Text("Ano Fabricação", style = FireTypography.BodyMedium) },
-                            placeholder = { Text("2024", style = FireTypography.BodyMedium) },
-                            isError = anoError != null,
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = FireColors.Primary,
-                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        OutlinedTextField(
-                            value = anoModelo,
-                            onValueChange = { 
-                                val digits = it.filter { char -> char.isDigit() }
-                                if (digits.length <= 4) {
-                                    anoModelo = digits
-                                    anoError = if (digits.isNotBlank() && !validateAno(digits)) {
-                                        "Ano inválido"
-                                    } else null
+                            }
+                        }
+                        
+                        // Ano Modelo Select
+                        Box(modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                value = anoModelo,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Ano Mod.", style = FireTypography.BodyMedium) },
+                                modifier = Modifier.fillMaxWidth(),
+                                trailingIcon = {
+                                    IconButton(onClick = { expandedAnoModDropdown = !expandedAnoModDropdown }) {
+                                        Icon(
+                                            imageVector = if (expandedAnoModDropdown) FireIcons.ArrowDropUp else FireIcons.ArrowDropDown,
+                                            contentDescription = null
+                                        )
+                                    }
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = FireColors.Primary,
+                                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            DropdownMenu(
+                                expanded = expandedAnoModDropdown,
+                                onDismissRequest = { expandedAnoModDropdown = false },
+                                modifier = Modifier.heightIn(max = 200.dp)
+                            ) {
+                                yearsRange.forEach { y ->
+                                    DropdownMenuItem(
+                                        text = { Text(y) },
+                                        onClick = {
+                                            anoModelo = y
+                                            expandedAnoModDropdown = false
+                                        }
+                                    )
                                 }
-                            },
-                            label = { Text("Ano Modelo", style = FireTypography.BodyMedium) },
-                            placeholder = { Text("2025", style = FireTypography.BodyMedium) },
-                            isError = anoError != null,
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = FireColors.Primary,
-                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                    if (anoError != null) {
-                        Text(
-                            "Ano inválido (1900-${java.time.Year.now().value + 1})",
-                            style = FireTypography.LabelSmall,
-                            color = FireColors.Error,
-                            modifier = Modifier.padding(start = FireSpacing.ExtraSmall)
-                        )
+                            }
+                        }
                     }
                 }
             }
@@ -432,12 +901,15 @@ fun AddVehicleDialog(
                             onDismissRequest = { expandedPessoaDropdown = false },
                             modifier = Modifier.fillMaxWidth(0.9f)
                         ) {
-                            if (pessoasDisponiveis.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text("Nenhuma pessoa cadastrada", color = Color.Gray) },
-                                    onClick = {}
-                                )
-                            } else {
+                            DropdownMenuItem(
+                                text = { Text("Nenhum (Sem proprietário vinculado)", color = Color.Gray) },
+                                onClick = {
+                                    selectedPessoaId = null
+                                    expandedPessoaDropdown = false
+                                }
+                            )
+                            if (pessoasDisponiveis.isNotEmpty()) {
+                                Divider()
                                 pessoasDisponiveis.forEach { pessoa ->
                                     DropdownMenuItem(
                                         text = {
@@ -463,7 +935,7 @@ fun AddVehicleDialog(
             }
             
             // Card: CRLV Capturado
-            if (crlvImage != null) {
+            if (currentCrlvImageUri != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = FireColors.Success.copy(alpha = 0.1f)),
                     shape = RoundedCornerShape(16.dp),
@@ -476,46 +948,23 @@ fun AddVehicleDialog(
                         horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
                     ) {
                         Icon(
-                            imageVector = FireIcons.PhotoCamera,
+                            imageVector = FireIcons.Check,
                             contentDescription = null,
                             tint = FireColors.Success
                         )
                         Column {
                             Text(
-                                "✅ CRLV Capturado com Sucesso",
+                                "✅ CRLV Anexado",
                                 style = FireTypography.BodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = FireColors.Success
                             )
                             Text(
-                                "Documento anexado ao veículo",
+                                "Imagem de documento vinculada",
                                 style = FireTypography.LabelSmall,
                                 color = FireColors.Success
                             )
                         }
-                    }
-                }
-            } else {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = FireColors.SurfaceVariant.copy(alpha = 0.3f)),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(FireSpacing.Medium),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(FireSpacing.Small)
-                    ) {
-                        Icon(
-                            imageVector = FireIcons.Info,
-                            contentDescription = null,
-                            tint = FireColors.OnSurfaceVariant
-                        )
-                        Text(
-                            "Nenhum CRLV capturado. Use o botão 'Scanear CRLV'",
-                            style = FireTypography.LabelMedium,
-                            color = FireColors.OnSurfaceVariant
-                        )
                     }
                 }
             }

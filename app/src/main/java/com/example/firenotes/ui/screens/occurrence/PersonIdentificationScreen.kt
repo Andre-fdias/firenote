@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 @Composable
 fun PersonIdentificationScreen(
     occurrenceId: String,
+    documentId: String? = null,
     viewModel: PersonIdentificationViewModel,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -52,8 +53,13 @@ fun PersonIdentificationScreen(
         }
     }
     
-    LaunchedEffect(occurrenceId) {
+    LaunchedEffect(occurrenceId, documentId) {
         viewModel.setOccurrenceId(occurrenceId)
+        if (documentId != null) {
+            viewModel.loadDocumentForEditing(documentId)
+        } else {
+            viewModel.resetSelection()
+        }
     }
 
     var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }

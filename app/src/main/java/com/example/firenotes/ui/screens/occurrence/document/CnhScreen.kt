@@ -1,8 +1,15 @@
 package com.example.firenotes.ui.screens.occurrence.document
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.*
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import com.example.firenotes.ui.designsystem.components.inputs.FireOutlinedTextField
 import com.example.firenotes.ui.designsystem.components.inputs.FireDatePicker
 import com.example.firenotes.ui.designsystem.components.buttons.FireButton
@@ -54,13 +61,43 @@ fun CnhIdentificationScreen(
                 error = validationErrors.containsKey("registro"),
                 modifier = Modifier.weight(1f)
             )
-            FireOutlinedTextField(
-                value = state.categoria,
-                onValueChange = { onStateChange(state.copy(categoria = it)) },
-                label = "Cat. Hab.",
-                error = validationErrors.containsKey("categoria"),
-                modifier = Modifier.weight(1f)
-            )
+            var expandedCategoria by remember { mutableStateOf(false) }
+            val cnhCategories = listOf("A", "B", "C", "D", "E", "AB", "AC", "AD", "AE")
+            Box(modifier = Modifier.weight(1f)) {
+                FireOutlinedTextField(
+                    value = state.categoria,
+                    onValueChange = {},
+                    label = "Cat. Hab.",
+                    readOnly = true,
+                    error = validationErrors.containsKey("categoria"),
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Dropdown"
+                        )
+                    }
+                )
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clickable { expandedCategoria = true }
+                )
+                DropdownMenu(
+                    expanded = expandedCategoria,
+                    onDismissRequest = { expandedCategoria = false }
+                ) {
+                    cnhCategories.forEach { category ->
+                        DropdownMenuItem(
+                            text = { Text(category) },
+                            onClick = {
+                                onStateChange(state.copy(categoria = category))
+                                expandedCategoria = false
+                            }
+                        )
+                    }
+                }
+            }
         }
 
         FireDatePicker(

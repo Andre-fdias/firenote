@@ -37,6 +37,12 @@ interface OcorrenciaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPessoa(pessoa: RoomPessoa)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertPessoaIgnore(pessoa: RoomPessoa): Long
+
+    @Update
+    suspend fun updatePessoa(pessoa: RoomPessoa)
+
     @Query("SELECT * FROM pessoas WHERE id = :id")
     suspend fun getPessoaById(id: String): RoomPessoa?
 
@@ -131,7 +137,10 @@ interface OcorrenciaDao {
         } else {
             pessoa
         }
-        insertPessoa(finalPessoa)
+        val rowId = insertPessoaIgnore(finalPessoa)
+        if (rowId == -1L) {
+            updatePessoa(finalPessoa)
+        }
         insertDocumento(documento.copy(pessoaId = finalPessoaId))
         return finalPessoaId
     }
@@ -212,4 +221,34 @@ interface OcorrenciaDao {
 
     @Query("SELECT * FROM backup_log ORDER BY dataHora DESC")
     suspend fun getBackupLogs(): List<RoomBackupLog>
+
+    @Query("""
+        SELECT DISTINCT prefixo, unidade FROM (
+            SELECT prefixo, quartel as unidade FROM viaturas_master
+            UNION
+            SELECT prefixo, unidade FROM viaturas_ocorrencia
+        ) WHERE prefixo IS NOT NULL AND prefixo != ''
+    """)
+    suspend fun getDistinctViaturas(): List<RoomViaturaSuggestion>
+
+    @Query("""
+        SELECT DISTINCT re, nomeGuerra, graduacao, funcao FROM (
+            SELECT re, nomeGuerra, graduacao, funcao FROM militares_master
+            UNION
+            SELECT re, nomeGuerra, graduacao, funcao FROM militares_viatura
+        ) WHERE re IS NOT NULL AND re != ''
+    """)
+    suspend fun getDistinctMilitares(): List<RoomMilitarSuggestion>
 }
+
+data class RoomViaturaSuggestion(
+    val prefixo: String,
+    val unidade: String?
+)
+
+data class RoomMilitarSuggestion(
+    val re: String,
+    val nomeGuerra: String,
+    val graduacao: String,
+    val funcao: String?
+)

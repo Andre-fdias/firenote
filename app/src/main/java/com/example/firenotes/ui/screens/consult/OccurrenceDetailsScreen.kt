@@ -73,9 +73,8 @@ fun OccurrenceDetailsScreen(
             onDismiss = { editingImagePath = null },
             onSave = { editedBitmap, saveAsNew ->
                 try {
-                    if (saveAsNew) {
-                        val originalFile = File(path)
-                        val folder = originalFile.parentFile ?: context.cacheDir
+                    if (saveAsNew || path.startsWith("content://") || path.startsWith("file://") || path.startsWith("http://") || path.startsWith("https://")) {
+                        val folder = context.cacheDir
                         val newFile = File(folder, "foto_${System.currentTimeMillis()}.jpg")
                         java.io.FileOutputStream(newFile).use { out ->
                             editedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
@@ -256,10 +255,14 @@ fun OccurrenceDetailsScreen(
                                         uris.add(pdfUri)
 
                                         occurrence.fotos.forEach { path ->
-                                            val file = File(path)
-                                            if (file.exists()) {
-                                                val imgUri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.firenotes.fileprovider", file)
-                                                uris.add(imgUri)
+                                            if (path.startsWith("content://") || path.startsWith("file://")) {
+                                                uris.add(android.net.Uri.parse(path))
+                                            } else {
+                                                val file = File(path)
+                                                if (file.exists()) {
+                                                    val imgUri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.firenotes.fileprovider", file)
+                                                    uris.add(imgUri)
+                                                }
                                             }
                                         }
 
@@ -268,10 +271,14 @@ fun OccurrenceDetailsScreen(
                                             .map { it.urlStorage }
                                             .distinct()
                                             .forEach { path ->
-                                                val file = File(path)
-                                                if (file.exists()) {
-                                                    val imgUri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.firenotes.fileprovider", file)
-                                                    uris.add(imgUri)
+                                                if (path.startsWith("content://") || path.startsWith("file://")) {
+                                                    uris.add(android.net.Uri.parse(path))
+                                                } else {
+                                                    val file = File(path)
+                                                    if (file.exists()) {
+                                                        val imgUri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.firenotes.fileprovider", file)
+                                                        uris.add(imgUri)
+                                                    }
                                                 }
                                             }
 
@@ -642,8 +649,13 @@ fun OccurrenceDetailsScreen(
                                 .filter { it.tipo.contains("Imagem", ignoreCase = true) || it.tipo.contains("Croqui", ignoreCase = true) || it.urlStorage.endsWith(".jpg") || it.urlStorage.endsWith(".png") || it.urlStorage.endsWith(".jpeg") }
                                .map { it.urlStorage }
                         }
-                        val todasImagens = remember(occurrence.fotos, evidenciasImagens) {
-                            (occurrence.fotos + evidenciasImagens).distinct()
+                        val documentosImagens = remember(uiState.documentos) {
+                            uiState.documentos
+                                .mapNotNull { it.urlImagem }
+                                .filter { it.isNotBlank() }
+                        }
+                        val todasImagens = remember(occurrence.fotos, evidenciasImagens, documentosImagens) {
+                            (occurrence.fotos + evidenciasImagens + documentosImagens).distinct()
                         }
                         if (todasImagens.isNotEmpty()) {
                             SectionCard(title = "📸 Imagens Anexadas e Evidências") {
@@ -674,7 +686,11 @@ fun OccurrenceDetailsScreen(
                                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                                     ) {
                                         AsyncImage(
-                                            model = File(todasImagens[page]),
+                                            model = if (todasImagens[page].startsWith("content://") || todasImagens[page].startsWith("http://") || todasImagens[page].startsWith("https://") || todasImagens[page].startsWith("file://")) {
+                                                todasImagens[page]
+                                            } else {
+                                                java.io.File(todasImagens[page])
+                                            },
                                             contentDescription = "Imagem da ocorrência/evidência",
                                             contentScale = ContentScale.Crop,
                                             modifier = Modifier.fillMaxSize()
@@ -886,10 +902,19 @@ fun ImageEditorDialog(
     
     LaunchedEffect(imagePath) {
         try {
-            val file = File(imagePath)
-            if (file.exists()) {
-                val original = BitmapFactory.decodeFile(file.absolutePath)
-                val mutable = original.copy(Bitmap.Config.ARGB_8888, true)
+            val resolvedBitmap = if (imagePath.startsWith("content://") || imagePath.startsWith("file://") || imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+                val uri = android.net.Uri.parse(imagePath)
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            } else {
+                val file = File(imagePath)
+                if (file.exists()) {
+                    BitmapFactory.decodeFile(file.absolutePath)
+                } else null
+            }
+            if (resolvedBitmap != null) {
+                val mutable = resolvedBitmap.copy(Bitmap.Config.ARGB_8888, true)
                 editedBitmap = mutable
             }
         } catch (e: Exception) {

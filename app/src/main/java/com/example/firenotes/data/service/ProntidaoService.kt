@@ -93,10 +93,13 @@ object ProntidaoService {
     }
 
     fun getProntidaoForDate(date: LocalDate): Prontidao {
-        val nowTime = LocalTime.now()
-        val dateTime = LocalDateTime.of(date, nowTime)
-        android.util.Log.d("FireProntidao", "Calculando prontidão para Data: $date, Hora: $nowTime, DataBase: ${if (nowTime.isBefore(LocalTime.of(7, 30))) date.minusDays(1) else date}")
-        return getProntidaoForDateTime(dateTime)
+        val daysBetween = ChronoUnit.DAYS.between(START_DATE, date)
+        val index = ((daysBetween % 3 + 3) % 3).toInt()
+        return when (index) {
+            0 -> Prontidao.AMARELA
+            1 -> Prontidao.AZUL
+            else -> Prontidao.VERDE
+        }
     }
 
     fun getProntidaoForInstant(instant: Instant): Prontidao {

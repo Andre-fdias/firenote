@@ -135,14 +135,18 @@ sealed class Screen(
     // ============================================
     
     object DocumentScanner : Screen(
-        route = "document_scanner/{occurrenceId}",
+        route = "document_scanner/{occurrenceId}?documentId={documentId}",
         title = "Digitalizar Documento",
         icon = Icons.Outlined.Camera,
         selectedIcon = Icons.Filled.Camera,
         showInBottomBar = false
     ) {
-        fun createRoute(occurrenceId: String): String {
-            return "document_scanner/$occurrenceId"
+        fun createRoute(occurrenceId: String, documentId: String? = null): String {
+            return if (documentId != null) {
+                "document_scanner/$occurrenceId?documentId=$documentId"
+            } else {
+                "document_scanner/$occurrenceId"
+            }
         }
     }
     

@@ -25,6 +25,7 @@ import com.example.firenotes.ui.designsystem.typography.FireTypography
 @Composable
 fun AddMilitarDialog(
     militar: Militar? = null,
+    militarSuggestions: List<Militar> = emptyList(),
     onDismiss: () -> Unit,
     onConfirm: (re: String, nomeGuerra: String, graduacao: String, funcao: String) -> Unit
 ) {
@@ -105,62 +106,117 @@ fun AddMilitarDialog(
                     }
                     
                     // RE com validação de 6 dígitos
-                    OutlinedTextField(
-                        value = re,
-                        onValueChange = { 
-                            val digits = it.filter { char -> char.isDigit() }
-                            if (digits.length <= 6) {
-                                re = digits
-                                reError = if (digits.isNotBlank() && !validateRe(digits)) {
-                                    "RE deve conter exatamente 6 dígitos"
-                                } else null
+                    var expandedRe by remember { mutableStateOf(false) }
+                    val filteredByRe = remember(re, militarSuggestions) {
+                        if (re.isBlank()) emptyList()
+                        else militarSuggestions.filter { it.re.contains(re) && it.re != re }
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = re,
+                            onValueChange = { 
+                                val digits = it.filter { char -> char.isDigit() }
+                                if (digits.length <= 6) {
+                                    re = digits
+                                    expandedRe = true
+                                    reError = if (digits.isNotBlank() && !validateRe(digits)) {
+                                        "RE deve conter exatamente 6 dígitos"
+                                    } else null
+                                }
+                            },
+                            label = { Text("RE (Registro Escolar)", style = FireTypography.BodyMedium) },
+                            placeholder = { Text("123456", style = FireTypography.BodyMedium) },
+                            isError = reError != null,
+                            supportingText = {
+                                if (reError != null) {
+                                    Text(reError!!, color = FireColors.Error)
+                                } else {
+                                    Text("Apenas números (6 dígitos)", style = FireTypography.LabelSmall)
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FireColors.Primary,
+                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        DropdownMenu(
+                            expanded = expandedRe && filteredByRe.isNotEmpty(),
+                            onDismissRequest = { expandedRe = false },
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            filteredByRe.take(5).forEach { suggestion ->
+                                DropdownMenuItem(
+                                    text = { Text("${suggestion.re} - ${suggestion.nomeGuerra} (${suggestion.graduacao})") },
+                                    onClick = {
+                                        re = suggestion.re
+                                        nomeGuerra = suggestion.nomeGuerra
+                                        graduacao = suggestion.graduacao
+                                        funcao = suggestion.funcao
+                                        expandedRe = false
+                                    }
+                                )
                             }
-                        },
-                        label = { Text("RE (Registro Escolar)", style = FireTypography.BodyMedium) },
-                        placeholder = { Text("123456", style = FireTypography.BodyMedium) },
-                        isError = reError != null,
-                        supportingText = {
-                            if (reError != null) {
-                                Text(reError!!, color = FireColors.Error)
-                            } else {
-                                Text("Apenas números (6 dígitos)", style = FireTypography.LabelSmall)
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = FireColors.Primary,
-                            unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                        }
+                    }
                     
-                    // Nome de Guerra
-                    OutlinedTextField(
-                        value = nomeGuerra,
-                        onValueChange = { 
-                            nomeGuerra = it
-                            nomeError = if (it.isNotBlank() && !validateNome(it)) {
-                                "Apenas letras (2 a 30 caracteres)"
-                            } else null
-                        },
-                        label = { Text("Nome de Guerra", style = FireTypography.BodyMedium) },
-                        placeholder = { Text("SILVA", style = FireTypography.BodyMedium) },
-                        isError = nomeError != null,
-                        supportingText = {
-                            if (nomeError != null) {
-                                Text(nomeError!!, color = FireColors.Error)
+                    var expandedNome by remember { mutableStateOf(false) }
+                    val filteredByNome = remember(nomeGuerra, militarSuggestions) {
+                        if (nomeGuerra.isBlank()) emptyList()
+                        else militarSuggestions.filter { it.nomeGuerra.contains(nomeGuerra, ignoreCase = true) && it.nomeGuerra != nomeGuerra }
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = nomeGuerra,
+                            onValueChange = { 
+                                nomeGuerra = it
+                                expandedNome = true
+                                nomeError = if (it.isNotBlank() && !validateNome(it)) {
+                                    "Apenas letras (2 a 30 caracteres)"
+                                } else null
+                            },
+                            label = { Text("Nome de Guerra", style = FireTypography.BodyMedium) },
+                            placeholder = { Text("SILVA", style = FireTypography.BodyMedium) },
+                            isError = nomeError != null,
+                            supportingText = {
+                                if (nomeError != null) {
+                                    Text(nomeError!!, color = FireColors.Error)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FireColors.Primary,
+                                unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        DropdownMenu(
+                            expanded = expandedNome && filteredByNome.isNotEmpty(),
+                            onDismissRequest = { expandedNome = false },
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            filteredByNome.take(5).forEach { suggestion ->
+                                DropdownMenuItem(
+                                    text = { Text("${suggestion.re} - ${suggestion.nomeGuerra} (${suggestion.graduacao})") },
+                                    onClick = {
+                                        re = suggestion.re
+                                        nomeGuerra = suggestion.nomeGuerra
+                                        graduacao = suggestion.graduacao
+                                        funcao = suggestion.funcao
+                                        expandedNome = false
+                                    }
+                                )
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = FireColors.Primary,
-                            unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                        }
+                    }
                     
                     // Graduação (Dropdown)
                     FireDropdown(

@@ -1,6 +1,7 @@
 package com.example.firenotes.ui.screens.occurrence
 
 import android.net.Uri
+import androidx.compose.ui.text.font.FontWeight
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -41,7 +42,7 @@ import kotlinx.coroutines.launch
 fun OccurrenceFormScreen(
     viewModel: OccurrenceFormViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToDocumentScanner: (String) -> Unit,
+    onNavigateToDocumentScanner: (String, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -67,6 +68,8 @@ fun OccurrenceFormScreen(
     // Estados de diálogo
     var activeModule by remember { mutableStateOf<OccurrenceModule?>(null) }
     var showAddVehicleDialog by remember { mutableStateOf(false) }
+    var editingVeiculo by remember { mutableStateOf<VeiculoEnvolvido?>(null) }
+    var veiculoToDelete by remember { mutableStateOf<VeiculoEnvolvido?>(null) }
     var showAddVictimDialog by remember { mutableStateOf(false) }
     var showAddViaturaDialog by remember { mutableStateOf(false) }
     var showAddMilitarDialog by remember { mutableStateOf(false) }
@@ -127,6 +130,15 @@ fun OccurrenceFormScreen(
         }
     }
 
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            evidencePhotoUriString = uri.toString()
+            showClassificationDialog = true
+        }
+    }
+
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -168,14 +180,22 @@ fun OccurrenceFormScreen(
     val allGalleryImages = remember(uiState) {
         buildList {
             uiState.documentos.forEach { doc ->
-                add(GalleryImage(
-                    id = doc.id ?: "",
-                    path = doc.urlImagem ?: "",
-                    title = "Documento: ${doc.tipo}",
-                    category = "Documento",
-                    date = doc.dataUpload ?: "N/A",
-                    origin = doc.tipo
-                ))
+                if (!doc.urlImagem.isNullOrBlank()) {
+                    val name = doc.dadosEstruturados["nome"]?.uppercase() ?: "N/D"
+                    val isVitima = uiState.vitimas.any { it.pessoaId == doc.pessoaId }
+                    val role = if (isVitima) "Vítima" else "Envolvido"
+                    val linkedVehicle = uiState.veiculos.find { it.proprietarioId == doc.pessoaId || it.condutorId == doc.pessoaId }
+                    val vehicleStr = if (linkedVehicle != null) " | Veículo: ${linkedVehicle.placa}" else ""
+                    
+                    add(GalleryImage(
+                        id = doc.id ?: "",
+                        path = doc.urlImagem!!,
+                        title = "$name ($role)$vehicleStr",
+                        category = "Documento",
+                        date = doc.dataUpload ?: "N/A",
+                        origin = doc.tipo
+                    ))
+                }
             }
             uiState.veiculos.forEach { veic ->
                 if (!veic.urlCrlv.isNullOrBlank()) {
@@ -347,7 +367,13 @@ fun OccurrenceFormScreen(
                             onModuleSelected = { module ->
                                 activeModule = module
                             },
-                            onFinishClick = onNavigateBack
+                            onFinishClick = onNavigateBack,
+                            onProtocoloChange = { newProtocolo ->
+                                viewModel.updateInitialFields(newProtocolo, uiState.data, uiState.hora)
+                            },
+                            onNaturezaChange = { subNatureza ->
+                                viewModel.selectNaturezaForCreation(subNatureza.baseNatureza, subNatureza.nome)
+                            }
                         )
                     } else {
                         // Módulos individuais carregados dinamicamente
@@ -406,10 +432,19 @@ fun OccurrenceFormScreen(
                                         onNewVehicleClick = {
                                             ocrResultData = null
                                             crlvImageUriString = null
+                                            editingVeiculo = null
                                             showAddVehicleDialog = true
                                         },
                                         onScanCrlvClick = {
                                             launchCameraWithPermissionCheck("CRLV")
+                                        },
+                                        onEditVehicleClick = { veiculo ->
+                                            ocrResultData = null
+                                            crlvImageUriString = null
+                                            editingVeiculo = veiculo
+                                        },
+                                        onDeleteVehicleClick = { veiculo ->
+                                            veiculoToDelete = veiculo
                                         },
                                         galleryImages = allGalleryImages.filter { it.category == "Veículo" },
                                         onImageClick = { viewerImageId = it.id },
@@ -421,13 +456,21 @@ fun OccurrenceFormScreen(
                                         uiState = uiState,
                                         onNewDocClick = {
                                             uiState.id?.let { occurrenceId ->
-                                                onNavigateToDocumentScanner(occurrenceId)
+                                                onNavigateToDocumentScanner(occurrenceId, null)
                                             }
                                         },
                                         onScanDocClick = {
                                             uiState.id?.let { occurrenceId ->
-                                                onNavigateToDocumentScanner(occurrenceId)
+                                                onNavigateToDocumentScanner(occurrenceId, null)
                                             }
+                                        },
+                                        onEditDocClick = { docId ->
+                                            uiState.id?.let { occurrenceId ->
+                                                onNavigateToDocumentScanner(occurrenceId, docId)
+                                            }
+                                        },
+                                        onDeleteDocClick = { docId ->
+                                            viewModel.deleteDocumento(docId)
                                         },
                                         galleryImages = allGalleryImages,
                                         onImageClick = { viewerImageId = it.id },
@@ -479,6 +522,9 @@ fun OccurrenceFormScreen(
                                         onTakePhoto = {
                                             launchCameraWithPermissionCheck("EVIDENCIA")
                                         },
+                                        onPickPhoto = {
+                                            galleryLauncher.launch("image/*")
+                                        },
                                         galleryImages = evidenceImages,
                                         onImageClick = { viewerImageId = it.id },
                                         onBack = autoSaveAndCloseModule
@@ -521,13 +567,19 @@ fun OccurrenceFormScreen(
 
 
 
-    // Dialog: Add Vehicle
-    if (showAddVehicleDialog) {
+    // Dialog: Add/Edit Vehicle
+    if (showAddVehicleDialog || editingVeiculo != null) {
         AddVehicleDialog(
+            veiculoParaEditar = editingVeiculo,
             ocrResult = ocrResultData,
             pessoasDisponiveis = uiState.pessoas,
             crlvImage = crlvImageUri,
-            onDismiss = { showAddVehicleDialog = false },
+            onDismiss = {
+                showAddVehicleDialog = false
+                editingVeiculo = null
+                ocrResultData = null
+                crlvImageUriString = null
+            },
             onConfirm = { placa, modelo, cor, chassi, ano, propId, marca, versao, exercicio, crlvUri ->
                 val fields = mapOf(
                     "placa" to placa,
@@ -547,10 +599,45 @@ fun OccurrenceFormScreen(
                     ano = ano,
                     proprietarioId = propId,
                     extractedFields = fields,
-                    rawText = ocrResultData?.rawText ?: "",
-                    imageUri = crlvUri
+                    rawText = ocrResultData?.rawText ?: editingVeiculo?.ocrTextoCrlv ?: "",
+                    imageUri = crlvUri,
+                    id = editingVeiculo?.id
                 )
                 showAddVehicleDialog = false
+                editingVeiculo = null
+                ocrResultData = null
+                crlvImageUriString = null
+            },
+            onScanCrlvClick = {
+                showAddVehicleDialog = false
+                launchCameraWithPermissionCheck("CRLV")
+            }
+        )
+    }
+
+    // Dialog: Confirm Delete Vehicle
+    if (veiculoToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { veiculoToDelete = null },
+            title = { Text("Excluir Veículo", fontWeight = FontWeight.Bold) },
+            text = { Text("Deseja realmente excluir o veículo placa ${veiculoToDelete?.placa}?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        veiculoToDelete?.id?.let { id ->
+                            viewModel.deleteVeiculo(id)
+                        }
+                        veiculoToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = FireColors.Error)
+                ) {
+                    Text("Excluir")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { veiculoToDelete = null }) {
+                    Text("Cancelar")
+                }
             }
         )
     }
@@ -590,6 +677,7 @@ fun OccurrenceFormScreen(
     if (showAddViaturaDialog || viaturaToEdit != null) {
         AddViaturaDialogV2(
             viatura = viaturaToEdit,
+            viaturaSuggestions = uiState.viaturasSuggestions,
             onDismiss = {
                 showAddViaturaDialog = false
                 viaturaToEdit = null
@@ -606,6 +694,7 @@ fun OccurrenceFormScreen(
     // Dialog: Add Militar
     if (showAddMilitarDialog) {
         AddMilitarDialog(
+            militarSuggestions = uiState.militaresSuggestions,
             onDismiss = { showAddMilitarDialog = false },
             onConfirm = { re, nome, grad, func ->
                 viewModel.addMilitar(activeViaturaIdForMilitar, re, nome, grad, func)
@@ -661,9 +750,17 @@ fun OccurrenceFormScreen(
 
     // Dialog: Image Viewer
     if (viewerImageId != null) {
+        val filteredImages = remember(activeModule, allGalleryImages) {
+            when (activeModule) {
+                OccurrenceModule.DOCUMENTOS -> allGalleryImages.filter { it.category == "Documento" }
+                OccurrenceModule.EVIDENCIAS -> allGalleryImages.filter { it.category == "Evidência" }
+                OccurrenceModule.VEICULOS -> allGalleryImages.filter { it.category == "Veículo" }
+                else -> allGalleryImages
+            }
+        }
         ImageViewerDialog(
             initialImageId = viewerImageId!!,
-            imagesList = allGalleryImages,
+            imagesList = filteredImages,
             onDismiss = { viewerImageId = null },
             onDeleteImage = onDeleteImage,
             onShareImage = onShareImage,
@@ -735,7 +832,7 @@ private fun buildTopBarTitle(activeModule: OccurrenceModule?, uiState: Occurrenc
     return if (activeModule != null) {
         "Módulo: ${activeModule.name.lowercase().replaceFirstChar { it.uppercase() }}"
     } else {
-        if (uiState.formStage == FormStage.INITIAL_DATA) "Dados Iniciais"
-        else "Ocorrência: ${uiState.protocolo}"
+        if (uiState.formStage == FormStage.INITIAL_DATA) "Nova Ocorrencia"
+        else "Ocorrencia: ${uiState.protocolo}"
     }
 }

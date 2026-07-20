@@ -137,17 +137,7 @@ fun InitialDataScreen(
             verticalArrangement = Arrangement.spacedBy(FireSpacing.MediumLarge)
         ) {
             // ==========================================
-            // HEADER MODERNO COM ANIMAÇÃO
-            // ==========================================
-            ModernHeader(
-                isGpsFixed = uiState.latitude != null,
-                isGpsLoading = uiState.isGpsLoading,
-                onFetchGps = { viewModel.captureLocationAndAddress() },
-                onHelpClick = { showHelpModal = true }
-            )
-
-            // ==========================================
-            // CARD 1: IDENTIFICAÇÃO DA OCORRÊNCIA (MODERNO)
+            // CARD 1: DADOS DA OCORRÊNCIA
             // ==========================================
             ModernIdentificationCard(
                 protocolo = uiState.protocolo,
@@ -156,15 +146,12 @@ fun InitialDataScreen(
                 formattedDate = formattedDate,
                 prontidaoColor = uiState.prontidaoColor,
                 isLocked = isDataLocked,
-                onProntidaoChange = viewModel::updateProntidao,
                 onProtocoloChange = { input ->
                     val formatted = formatTalao(input)
                     viewModel.updateInitialFields(formatted, uiState.data, uiState.hora)
                 },
                 onDateClick = { showDatePickerDialog = true },
-                onTimeClick = { showTimePickerDialog = true },
-                onDateChange = { viewModel.updateInitialFields(uiState.protocolo, it, uiState.hora) },
-                onHoraChange = { viewModel.updateInitialFields(uiState.protocolo, uiState.data, it) }
+                onTimeClick = { showTimePickerDialog = true }
             )
 
             // ==========================================
@@ -179,7 +166,8 @@ fun InitialDataScreen(
                 onAddressChanged = viewModel::updateManualAddress,
                 showTechDetails = showTechDetails,
                 onShowTechDetailsChange = { showTechDetails = it },
-                onFetchGps = { viewModel.captureLocationAndAddress() }
+                onFetchGps = { viewModel.captureLocationAndAddress() },
+                onRestoreSavedLocation = viewModel::updateFullLocation
             )
 
             // ==========================================
@@ -504,12 +492,9 @@ private fun ModernIdentificationCard(
     formattedDate: String,
     prontidaoColor: String,
     isLocked: Boolean,
-    onProntidaoChange: (String) -> Unit,
     onProtocoloChange: (String) -> Unit,
     onDateClick: () -> Unit,
-    onTimeClick: () -> Unit,
-    onDateChange: (String) -> Unit,
-    onHoraChange: (String) -> Unit
+    onTimeClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -545,7 +530,7 @@ private fun ModernIdentificationCard(
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Identificação",
+                        text = "Nova Ocorrência",
                         style = FireTypography.Title,
                         fontWeight = FontWeight.Bold,
                         color = FireColors.Primary
@@ -561,38 +546,89 @@ private fun ModernIdentificationCard(
                 }
             }
 
-            // Número do Talão - Corrigido
-            OutlinedTextField(
-                value = protocolo,
-                onValueChange = { input ->
-                    // Apenas permite números e hífen
-                    val filtered = input.filter { it.isDigit() || it == '-' }
-                    // Aplica a máscara de formatação
-                    val formatted = formatTalao(filtered)
-                    onProtocoloChange(formatted)
-                },
-                label = { Text("Número do Talão") },
-                placeholder = { Text("Ex.: 2026-04587") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = FireIcons.AddAlert,
-                        contentDescription = null,
-                        tint = FireColors.Primary
-                    )
-                },
-                readOnly = false,
-                singleLine = true,
+            // Primeira Linha: Número do Talão e Prontidão de Serviço
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = FireColors.Primary,
-                    unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.3f),
-                    focusedLabelColor = FireColors.Primary,
-                    unfocusedLabelColor = FireColors.OnSurfaceVariant
-                ),
-                shape = RoundedCornerShape(12.dp)
-            )
+                horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Número do Talão - Peso 1.2
+                OutlinedTextField(
+                    value = protocolo,
+                    onValueChange = { input ->
+                        val filtered = input.filter { it.isDigit() || it == '-' }
+                        val formatted = formatTalao(filtered)
+                        onProtocoloChange(formatted)
+                    },
+                    label = { Text("Número do Talão") },
+                    placeholder = { Text("Ex.: 2026-04587") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = FireIcons.AddAlert,
+                            contentDescription = null,
+                            tint = FireColors.Primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    readOnly = false,
+                    singleLine = true,
+                    modifier = Modifier.weight(1.2f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = FireColors.Primary,
+                        unfocusedBorderColor = FireColors.OnSurfaceVariant.copy(alpha = 0.3f),
+                        focusedLabelColor = FireColors.Primary,
+                        unfocusedLabelColor = FireColors.OnSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
 
-            // Data e Hora - Layout Melhorado
+                // Prontidão de Serviço Automática - Peso 0.8
+                val colorValue = when (prontidaoColor.uppercase()) {
+                    "VERDE" -> Color(0xFF4CAF50)
+                    "AMARELA" -> Color(0xFFFFC107)
+                    "AZUL" -> Color(0xFF2196F3)
+                    else -> FireColors.Primary
+                }
+                Card(
+                    modifier = Modifier
+                        .weight(0.8f)
+                        .height(56.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = colorValue.copy(alpha = 0.08f)
+                    ),
+                    border = BorderStroke(1.dp, colorValue.copy(alpha = 0.3f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .background(colorValue, CircleShape)
+                        )
+                        Column {
+                            Text(
+                                text = "Prontidão",
+                                style = FireTypography.LabelSmall,
+                                color = FireColors.OnSurfaceVariant
+                            )
+                            Text(
+                                text = prontidaoColor.uppercase(),
+                                style = FireTypography.BodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colorValue
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Segunda Linha: Data e Hora - Layout Melhorado
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(FireSpacing.Medium)
@@ -673,71 +709,12 @@ private fun ModernIdentificationCard(
                                 fontWeight = FontWeight.Medium,
                                 color = if (isLocked) FireColors.OnSurfaceVariant.copy(alpha = 0.5f) else FireColors.OnSurface
                             )
-                        }
-                    }
-                }
-            }
-
-            // Prontidão de Serviço
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "🚒 Prontidão de Serviço",
-                    style = FireTypography.BodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = FireColors.OnSurface
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        "VERDE" to Color(0xFF4CAF50),
-                        "AMARELA" to Color(0xFFFFC107),
-                        "AZUL" to Color(0xFF2196F3)
-                    ).forEach { (colorName, colorValue) ->
-                        val isSelected = prontidaoColor == colorName
-
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .clickable(enabled = !isLocked) { onProntidaoChange(colorName) },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected) colorValue else colorValue.copy(alpha = 0.1f)
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            border = if (isSelected) BorderStroke(2.dp, colorValue) else BorderStroke(1.dp, colorValue.copy(alpha = 0.2f))
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                }
-                                Text(
-                                    text = colorName,
-                                    color = if (isSelected) Color.White else colorValue,
-                                    style = FireTypography.LabelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            }
-                        }
                     }
                 }
             }
         }
     }
+}
 }
 
 // ============================================
@@ -754,8 +731,13 @@ private fun ModernLocationCard(
     onAddressChanged: (String, String, String, String, String) -> Unit,
     showTechDetails: Boolean,
     onShowTechDetailsChange: (Boolean) -> Unit,
-    onFetchGps: () -> Unit
+    onFetchGps: () -> Unit,
+    onRestoreSavedLocation: (Double, Double, String, String, String, String, String) -> Unit
 ) {
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("firenotes_location_cache", android.content.Context.MODE_PRIVATE) }
+    val hasCachedLocation = remember(uiState) { prefs.getFloat("lat", 0f) != 0f }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -935,6 +917,67 @@ private fun ModernLocationCard(
                         style = FireTypography.LabelMedium,
                         fontWeight = FontWeight.Bold
                     )
+                }
+            }
+
+            // Sistema de Carga e Armazenamento Offline de Localização (Cache)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (uiState.latitude != null) {
+                    FilledTonalButton(
+                        onClick = {
+                            prefs.edit().apply {
+                                putFloat("lat", uiState.latitude.toFloat())
+                                putFloat("lng", uiState.longitude?.toFloat() ?: 0f)
+                                putString("rua", uiState.rua)
+                                putString("numero", uiState.numero)
+                                putString("bairro", uiState.bairro)
+                                putString("cidade", uiState.cidade)
+                                putString("uf", uiState.uf)
+                                apply()
+                            }
+                            android.widget.Toast.makeText(context, "Localização salva no cache!", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = FireColors.Success.copy(alpha = 0.1f),
+                            contentColor = FireColors.Success
+                        )
+                    ) {
+                        Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Salvar Local", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (hasCachedLocation && isAddressEditable) {
+                    FilledTonalButton(
+                        onClick = {
+                            val lat = prefs.getFloat("lat", 0f).toDouble()
+                            val lng = prefs.getFloat("lng", 0f).toDouble()
+                            val rua = prefs.getString("rua", "") ?: ""
+                            val numero = prefs.getString("numero", "") ?: ""
+                            val bairro = prefs.getString("bairro", "") ?: ""
+                            val cidade = prefs.getString("cidade", "") ?: ""
+                            val uf = prefs.getString("uf", "") ?: ""
+                            
+                            onRestoreSavedLocation(lat, lng, rua, numero, bairro, cidade, uf)
+                            android.widget.Toast.makeText(context, "Localização carregada do cache!", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = FireColors.Primary.copy(alpha = 0.1f),
+                            contentColor = FireColors.Primary
+                        )
+                    ) {
+                        Icon(Icons.Default.CloudDownload, null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Carregar Salva", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 

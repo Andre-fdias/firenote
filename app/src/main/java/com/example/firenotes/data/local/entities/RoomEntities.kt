@@ -446,7 +446,8 @@ data class RoomTarefa(
     val categoria: String,
     val prioridade: String = "MEDIA", // Valores: ALTA, MEDIA, BAIXA
     val criadoEm: Long = System.currentTimeMillis(),
-    val concluidoEm: Long? = null
+    val concluidoEm: Long? = null,
+    val hora: String? = null // Formato HH:MM
 )
 
 @Entity(tableName = "eventos_agenda")

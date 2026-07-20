@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
@@ -111,11 +112,11 @@ fun ElevatedCard(
 ) {
     val style = when (variant) {
         CardVariant.ELEVATED -> CardStyle(
-            borderColor = FireColors.Primary.copy(alpha = 0.12f),
-            borderWidth = 0.5.dp,
-            backgroundColor = FireColors.Surface.copy(alpha = 0.85f),
-            cornerRadius = 16.dp,
-            shadowElevation = 4.dp,
+            borderColor = Color.Transparent,
+            borderWidth = 0.dp,
+            backgroundColor = FireColors.Surface,
+            cornerRadius = 12.dp,
+            shadowElevation = 1.dp,
             contentPadding = PaddingValues(16.dp)
         )
         CardVariant.OUTLINED -> CardStyle(
@@ -680,17 +681,13 @@ fun HomeScreen(
     val allTarefas by viewModel.allTarefas.collectAsState()
     val allEventos by viewModel.allEventos.collectAsState()
     val allProntidoes by viewModel.allProntidoes.collectAsState()
+    val currentCity by viewModel.currentCity.collectAsState()
+    val hasDismissedAlertsThisSession by viewModel.hasDismissedAlertsThisSession.collectAsState()
 
     var calendarViewType by remember { mutableStateOf(CalendarViewType.MONTH) }
     var selectedTab by remember { mutableStateOf(TabType.OCORRENCIAS) }
     var showReportDialog by remember { mutableStateOf(false) }
     var filters by remember { mutableStateOf(ReportFilters()) }
-
-
-    val context = LocalContext.current
-    val userName = remember(context) { getDeviceOwnerName(context) }
-    val configuration = LocalConfiguration.current
-    val isTablet = configuration.screenWidthDp >= 600
 
     var currentHour by remember { mutableStateOf(LocalTime.now(ZoneId.systemDefault()).hour) }
     var currentMinute by remember { mutableStateOf(LocalTime.now(ZoneId.systemDefault()).minute) }
@@ -703,6 +700,48 @@ fun HomeScreen(
             kotlinx.coroutines.delay(60_000L)
         }
     }
+
+    var hasShownAlertsThisSession by rememberSaveable { mutableStateOf(false) }
+    var showAlertsDialog by remember { mutableStateOf(false) }
+    val today = remember { LocalDate.now() }
+
+    val activeEventAlerts = remember(allEventos, currentHour, currentMinute) {
+        val nowTime = LocalTime.now(ZoneId.systemDefault())
+        allEventos.filter { event ->
+            val isToday = event.data == today.toString()
+            val hasTime = !event.horaInicio.isNullOrBlank()
+            if (isToday && hasTime) {
+                val evTime = runCatching { LocalTime.parse(event.horaInicio) }.getOrNull()
+                evTime != null && nowTime.isBefore(evTime.plusHours(1))
+            } else false
+        }
+    }
+
+    val activeTaskAlerts = remember(allTarefas, currentHour, currentMinute) {
+        val nowTime = LocalTime.now(ZoneId.systemDefault())
+        allTarefas.filter { task ->
+            val isToday = task.data == today.toString()
+            val hasTime = !task.hora.isNullOrBlank()
+            val notDone = !task.concluida
+            if (isToday && hasTime && notDone) {
+                val tkTime = runCatching { LocalTime.parse(task.hora) }.getOrNull()
+                tkTime != null && nowTime.isBefore(tkTime.plusHours(1))
+            } else false
+        }
+    }
+
+    LaunchedEffect(activeEventAlerts, activeTaskAlerts, hasDismissedAlertsThisSession) {
+        if (!hasDismissedAlertsThisSession && !hasShownAlertsThisSession && (activeEventAlerts.isNotEmpty() || activeTaskAlerts.isNotEmpty())) {
+            showAlertsDialog = true
+            hasShownAlertsThisSession = true
+        }
+    }
+
+
+    val context = LocalContext.current
+    val userName = remember(context) { getDeviceOwnerName(context) }
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
 
     val greeting = remember(currentHour) {
         when {
@@ -927,6 +966,18 @@ fun HomeScreen(
                         )
                     }
 
+                    if (showAlertsDialog && !hasDismissedAlertsThisSession) {
+                        HomeAlertsDialog(
+                            activeEvents = activeEventAlerts,
+                            activeTasks = activeTaskAlerts,
+                            onDismiss = { showAlertsDialog = false },
+                            onDismissPermanently = {
+                                viewModel.dismissAlertsPermanently()
+                                showAlertsDialog = false
+                            }
+                        )
+                    }
+
                     LazyColumn(
                         contentPadding = PaddingValues(
                             horizontal = if (isTablet) 32.dp else 16.dp,
@@ -940,12 +991,11 @@ fun HomeScreen(
                             EnhancedWelcomeHeader(
                                 greeting = greeting,
                                 userName = userName,
+                                city = currentCity,
                                 todayDate = todayDate,
                                 prontidaoInfo = remember(selectedDate, allProntidoes) {
                                     calcularProntidaoInfoParaData(selectedDate, allProntidoes)
-                                },
-                                isRefreshing = isRefreshing,
-                                onRefresh = { viewModel.refreshAll() }
+                                }
                             )
                         }
 
@@ -996,6 +1046,7 @@ fun HomeScreen(
                                 occurrences = occurrencesMap[selectedDate] ?: emptyList(),
                                 tasks = tasksMap[selectedDate] ?: emptyList(),
                                 events = eventsMap[selectedDate] ?: emptyList(),
+                                allProntidoes = allProntidoes,
                                 selectedTab = selectedTab,
                                 onTabSelected = { selectedTab = it },
                                 onToggleTask = { task -> viewModel.toggleTarefa(task) },
@@ -1035,89 +1086,59 @@ fun HomeScreen(
 fun EnhancedWelcomeHeader(
     greeting: String,
     userName: String,
+    city: String,
     todayDate: String,
     prontidaoInfo: ProntidaoInfo,
-    isRefreshing: Boolean,
-    onRefresh: () -> Unit
+    modifier: Modifier = Modifier
 ) {
-    ElevatedCard(
-        variant = CardVariant.ELEVATED,
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            modifier = Modifier.weight(1f)
         ) {
-            Column {
-                Text(
-                    text = "$greeting, $userName 👋",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = FireColors.OnBackground
-                )
-                Text(
-                    text = todayDate,
-                    fontSize = 13.sp,
-                    color = FireColors.OnSurfaceVariant
-                )
-            }
+            Text(
+                text = "$greeting, $userName 👋",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = FireColors.OnBackground
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (city.isNotEmpty() && city != "...") "$city • $todayDate" else todayDate,
+                fontSize = 13.sp,
+                color = FireColors.OnSurfaceVariant
+            )
+        }
 
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Badge de prontidão ocupando as 2 linhas à direita
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color(prontidaoInfo.corHex).copy(alpha = 0.12f),
+            modifier = Modifier.padding(end = 2.dp)
+        ) {
             Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Badge Prontidão
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color(prontidaoInfo.corHex).copy(alpha = 0.15f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(Color(prontidaoInfo.corHex), CircleShape)
-                        )
-                        Text(
-                            text = "Prontidão ${prontidaoInfo.cor}",
-                            fontSize = 12.sp,
-                            color = Color(prontidaoInfo.corHex),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Botão atualizar
-                Surface(
-                    shape = CircleShape,
-                    color = FireColors.Primary.copy(alpha = 0.10f),
+                Box(
                     modifier = Modifier
-                        .size(36.dp)
-                        .clickable { onRefresh() }
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        if (isRefreshing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = FireColors.Primary
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Atualizar",
-                                tint = FireColors.Primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
+                        .size(8.dp)
+                        .background(Color(prontidaoInfo.corHex), CircleShape)
+                )
+                Text(
+                    text = prontidaoInfo.cor,
+                    fontSize = 12.sp,
+                    color = Color(prontidaoInfo.corHex),
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -1133,6 +1154,7 @@ fun OperationalTabsWithLists(
     occurrences: List<Ocorrencia>,
     tasks: List<RoomTarefa>,
     events: List<RoomEventoAgenda>,
+    allProntidoes: List<RoomProntidaoDia>,
     selectedTab: TabType,
     onTabSelected: (TabType) -> Unit,
     onToggleTask: (RoomTarefa) -> Unit,
@@ -1142,167 +1164,179 @@ fun OperationalTabsWithLists(
     val formattedDate = selectedDate.format(
         DateTimeFormatter.ofPattern("d 'de' MMMM", Locale("pt", "BR"))
     )
+    val prontidaoColor = getProntidaoColorForDate(selectedDate, allProntidoes)
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Card com Data e Botão Ver Agenda
-        ElevatedCard(
-            title = "📅 $formattedDate",
-            subtitle = "Escala e agenda operacional",
-            variant = CardVariant.ELEVATED,
-            modifier = Modifier.fillMaxWidth()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = FireColors.Surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Linha com prontidão, data selecionada e botão ver agenda
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.End
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Círculo com a cor da prontidão
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(prontidaoColor, CircleShape)
+                    )
+                    Text(
+                        text = formattedDate,
+                        style = FireTypography.Title,
+                        fontWeight = FontWeight.Bold,
+                        color = FireColors.OnSurface
+                    )
+                }
+
                 OutlinedButton(
                     onClick = onOpenAgenda,
-                     colors = ButtonDefaults.outlinedButtonColors(
+                    colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = FireColors.Primary
                     ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        0.5.dp,
+                        FireColors.Primary.copy(alpha = 0.3f)
+                    ),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(32.dp)
+                    modifier = Modifier.height(28.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
                 ) {
                     Icon(
                         Icons.Outlined.CalendarMonth,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Ver agenda completa", fontSize = 11.sp)
+                    Text("Ver agenda", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
-        }
 
-        // Abas MD3
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(
-                    elevation = 4.dp,
-                    shape = RoundedCornerShape(16.dp),
-                    clip = false
-                )
-                .border(
-                    width = 0.5.dp,
-                    color = FireColors.Primary.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(16.dp)
-                )
-                .background(
-                    color = FireColors.Surface.copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(16.dp)
-                ),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = FireColors.Surface.copy(alpha = 0.85f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Column {
-                // Tab Row
-                ScrollableTabRow(
-                    selectedTabIndex = selectedTab.ordinal,
-                    containerColor = Color.Transparent,
-                    contentColor = FireColors.Primary,
-                    edgePadding = 8.dp,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
-                            height = 3.dp,
-                            color = FireColors.Primary
-                        )
-                    },
-                    divider = { }
-                ) {
-                    TabType.values().forEachIndexed { index, tab ->
-                        val selected = selectedTab == tab
-                        Tab(
-                            selected = selected,
-                            onClick = { onTabSelected(tab) },
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = when (tab) {
-                                            TabType.OCORRENCIAS -> "🚑"
-                                            TabType.AGENDA -> "📅"
-                                            TabType.CHECKS -> "✅"
-                                        },
-                                        fontSize = 14.sp
-                                    )
-                                    Text(
-                                        text = when (tab) {
-                                            TabType.OCORRENCIAS -> "Ocorrências"
-                                            TabType.AGENDA -> "Agenda"
-                                            TabType.CHECKS -> "Checks"
-                                        },
-                                        fontSize = 13.sp,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (selected) FireColors.Primary else FireColors.OnSurfaceVariant
-                                    )
-                                    if (tab == TabType.OCORRENCIAS && occurrences.isNotEmpty()) {
+            HorizontalDivider(
+                color = FireColors.OnSurfaceVariant.copy(alpha = 0.08f),
+                thickness = 0.5.dp
+            )
+
+            // Abas MD3
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab.ordinal,
+                containerColor = Color.Transparent,
+                contentColor = FireColors.Primary,
+                edgePadding = 0.dp,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                        height = 2.5.dp,
+                        color = FireColors.Primary
+                    )
+                },
+                divider = { }
+            ) {
+                TabType.values().forEachIndexed { index, tab ->
+                    val selected = selectedTab == tab
+                    Tab(
+                        selected = selected,
+                        onClick = { onTabSelected(tab) },
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = when (tab) {
+                                        TabType.OCORRENCIAS -> "🚑"
+                                        TabType.AGENDA -> "📅"
+                                        TabType.CHECKS -> "✅"
+                                    },
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = when (tab) {
+                                        TabType.OCORRENCIAS -> "Ocorrências"
+                                        TabType.AGENDA -> "Agenda"
+                                        TabType.CHECKS -> "Checks"
+                                    },
+                                    fontSize = 12.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (selected) FireColors.Primary else FireColors.OnSurfaceVariant
+                                )
+                                if (tab == TabType.OCORRENCIAS && occurrences.isNotEmpty()) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = FireColors.Primary.copy(alpha = 0.15f),
+                                        modifier = Modifier.size(16.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = occurrences.size.toString(),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = FireColors.Primary
+                                            )
+                                        }
+                                    }
+                                }
+                                if (tab == TabType.CHECKS && tasks.isNotEmpty()) {
+                                    val pending = tasks.count { !it.concluida }
+                                    if (pending > 0) {
                                         Surface(
                                             shape = CircleShape,
-                                            color = FireColors.Error,
-                                            modifier = Modifier.size(18.dp)
+                                            color = FireColors.Primary.copy(alpha = 0.15f),
+                                            modifier = Modifier.size(16.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Text(
-                                                    text = occurrences.size.toString(),
+                                                    text = pending.toString(),
                                                     fontSize = 9.sp,
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = FireColors.Primary
                                                 )
                                             }
                                         }
                                     }
-                                    if (tab == TabType.CHECKS && tasks.isNotEmpty()) {
-                                        val pending = tasks.count { !it.concluida }
-                                        if (pending > 0) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = FireColors.Warning,
-                                                modifier = Modifier.size(18.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Text(
-                                                        text = pending.toString(),
-                                                        fontSize = 9.sp,
-                                                        color = Color.White,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
-                            },
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-                    }
+                            }
+                        },
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
                 }
+            }
 
-                // Conteúdo da Tab
-                when (selectedTab) {
-                    TabType.OCORRENCIAS -> {
-                        OccurrencesList(
-                            occurrences = occurrences,
-                            onNavigateToDetails = onNavigateToDetails
-                        )
-                    }
-                    TabType.AGENDA -> {
-                        EventsList(
-                            events = events
-                        )
-                    }
-                    TabType.CHECKS -> {
-                        TasksList(
-                            tasks = tasks,
-                            onToggleTask = onToggleTask
-                        )
-                    }
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Conteúdo da Tab
+            when (selectedTab) {
+                TabType.OCORRENCIAS -> {
+                    OccurrencesList(
+                        occurrences = occurrences,
+                        onNavigateToDetails = onNavigateToDetails
+                    )
+                }
+                TabType.AGENDA -> {
+                    EventsList(
+                        events = events
+                    )
+                }
+                TabType.CHECKS -> {
+                    TasksList(
+                        tasks = tasks,
+                        onToggleTask = onToggleTask
+                    )
                 }
             }
         }
@@ -1618,11 +1652,19 @@ fun MonthlyCalendarView(
         list
     }
 
-    ElevatedCard(
-        variant = CardVariant.ELEVATED,
-        modifier = Modifier.fillMaxWidth()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = FireColors.Surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 6.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2255,3 +2297,88 @@ private data class CardStyle(
     val shadowElevation: Dp,
     val contentPadding: PaddingValues
 )
+
+@Composable
+fun HomeAlertsDialog(
+    activeEvents: List<RoomEventoAgenda>,
+    activeTasks: List<RoomTarefa>,
+    onDismiss: () -> Unit,
+    onDismissPermanently: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("🔔 Compromissos de Hoje", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Voce possui compromissos agendados para hoje:", fontSize = 14.sp, color = FireColors.OnBackground)
+
+                if (activeEvents.isNotEmpty()) {
+                    Text("📅 Eventos:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = FireColors.Primary)
+                    activeEvents.forEach { ev ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = FireColors.Primary.copy(alpha = 0.05f)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(ev.titulo, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = FireColors.OnBackground)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Horario: ${ev.horaInicio ?: ""} as ${ev.horaFim ?: ""}", fontSize = 12.sp, color = FireColors.OnSurfaceVariant)
+                                if (!ev.descricao.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(ev.descricao, fontSize = 12.sp, color = FireColors.OnSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (activeTasks.isNotEmpty()) {
+                    Text("📋 Tarefas Pendentes:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = FireColors.Warning)
+                    activeTasks.forEach { task ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = FireColors.Warning.copy(alpha = 0.05f)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(task.titulo, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = FireColors.OnBackground)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Prazo: ${task.hora ?: ""}", fontSize = 12.sp, color = FireColors.OnSurfaceVariant)
+                                if (!task.descricao.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(task.descricao, fontSize = 12.sp, color = FireColors.OnSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismissPermanently
+            ) {
+                Text("Nao alertar mais nesta sessao", color = FireColors.OnSurfaceVariant, fontSize = 12.sp)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Entendido")
+            }
+        }
+    )
+}
