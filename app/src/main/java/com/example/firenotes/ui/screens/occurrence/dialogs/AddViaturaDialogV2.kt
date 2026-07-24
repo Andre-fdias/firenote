@@ -7,6 +7,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +58,32 @@ fun AddViaturaDialogV2(
         if (lo >= sa) lo - sa else 0
     }
     
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(prefixo, unidade, kmSaidaRaw, kmLocalRaw, observacoes, viatura) {
+        if (viatura != null) {
+            prefixo != viatura.prefixo ||
+            unidade != viatura.unidade ||
+            kmSaidaRaw != (viatura.kmSaida?.toString() ?: "") ||
+            kmLocalRaw != (viatura.kmLocal?.toString() ?: "") ||
+            observacoes != (viatura.observacoes ?: "")
+        } else {
+            prefixo.isNotEmpty() || unidade.isNotEmpty() || kmSaidaRaw.isNotEmpty() || kmLocalRaw.isNotEmpty() || observacoes.isNotEmpty()
+        }
+    }
+
+    val attemptDismiss = {
+        if (hasChanges) {
+            showConfirmCancelDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
     val isFormValid = remember(prefixo, prefixoError, isKmInvalid) {
         prefixo.isNotBlank() &&
         validatePrefixo(prefixo) &&
@@ -63,8 +91,30 @@ fun AddViaturaDialogV2(
         !isKmInvalid
     }
     
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Existem alterações não salvas") },
+            text = { Text("Deseja realmente cancelar este cadastro?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onDismiss()
+                }) {
+                    Text("Descartar alterações")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar editando")
+                }
+            }
+        )
+    }
+
     FireDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { attemptDismiss() },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         title = if (viatura == null) "Adicionar Viatura" else "Editar Viatura",
         confirmButton = {
             FireButton(
@@ -83,7 +133,7 @@ fun AddViaturaDialogV2(
             )
         },
         dismissButton = {
-            FireTextButton(onClick = onDismiss, text = "Cancelar")
+            FireTextButton(onClick = { attemptDismiss() }, text = "Cancelar")
         }
     ) {
         Column(

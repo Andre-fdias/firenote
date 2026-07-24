@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.example.firenotes.domain.repository.OcrDocumentResult
@@ -31,8 +33,48 @@ fun AddDocumentDialog(
     var nome by remember { mutableStateOf("") }
     var cpf by remember { mutableStateOf("") }
 
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(selectedTypeIndex, numero, nome, cpf) {
+        selectedTypeIndex != 0 || numero.isNotEmpty() || nome.isNotEmpty() || cpf.isNotEmpty()
+    }
+
+    val attemptDismiss = {
+        if (hasChanges) {
+            showConfirmCancelDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Existem alterações não salvas") },
+            text = { Text("Deseja realmente cancelar este cadastro?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onDismiss()
+                }) {
+                    Text("Descartar alterações")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar editando")
+                }
+            }
+        )
+    }
+
     FireDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { attemptDismiss() },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         title = "Adicionar Documento",
         confirmButton = {
             FireButton(
@@ -53,7 +95,7 @@ fun AddDocumentDialog(
             )
         },
         dismissButton = {
-            FireTextButton(onClick = onDismiss, text = "Cancelar")
+            FireTextButton(onClick = { attemptDismiss() }, text = "Cancelar")
         }
     ) {
         Column(

@@ -88,14 +88,32 @@ sealed class Screen(
         showInBottomBar = false
     )
 
-    object Agenda : Screen(
-        route = "agenda/{date}",
-        title = "Agenda Operacional",
+    object SettingsCalendar : Screen(
+        route = "settings_calendar",
+        title = "Configuração de Calendário",
+        icon = Icons.Outlined.Settings,
+        selectedIcon = Icons.Filled.Settings,
+        showInBottomBar = false
+    )
+
+    object GoogleSync : Screen(
+        route = "google_sync",
+        title = "Sincronização do Google",
+        icon = Icons.Outlined.Sync,
+        selectedIcon = Icons.Filled.Sync,
+        showInBottomBar = false
+    )
+
+    object CalendarWizard : Screen(
+        route = "calendar_wizard?escalaId={escalaId}",
+        title = "Assistente de Calendário",
         icon = Icons.Outlined.CalendarMonth,
         selectedIcon = Icons.Filled.CalendarMonth,
         showInBottomBar = false
     ) {
-        fun createRoute(date: String): String = "agenda/$date"
+        fun createRoute(escalaId: String? = null): String {
+            return if (escalaId != null) "calendar_wizard?escalaId=$escalaId" else "calendar_wizard"
+        }
     }
 
     object OccurrenceEdit : Screen(
@@ -105,6 +123,7 @@ sealed class Screen(
         selectedIcon = Icons.Filled.Edit,
         showInBottomBar = false
     ) {
+
         fun createRoute(occurrenceId: String): String {
             return "occurrence_edit/$occurrenceId"
         }
@@ -225,7 +244,8 @@ sealed class Screen(
             DocumentDetails,
             ViaturaList,
             ViaturaDetails,
-            MilitarDetails
+            MilitarDetails,
+            CalendarWizard
         )
         
         fun fromRoute(route: String?): Screen? {

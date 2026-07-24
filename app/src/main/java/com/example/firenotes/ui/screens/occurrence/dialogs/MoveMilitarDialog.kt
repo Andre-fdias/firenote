@@ -2,6 +2,8 @@ package com.example.firenotes.ui.screens.occurrence.dialogs
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,8 +28,48 @@ fun MoveMilitarDialog(
     var selectedViaturaIndex by remember { mutableStateOf(-1) }
     var expandedDropdown by remember { mutableStateOf(false) }
 
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(selectedViaturaIndex) {
+        selectedViaturaIndex != -1
+    }
+
+    val attemptDismiss = {
+        if (hasChanges) {
+            showConfirmCancelDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Existem alterações não salvas") },
+            text = { Text("Deseja realmente cancelar esta ação?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onDismiss()
+                }) {
+                    Text("Descartar alterações")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar selecionando")
+                }
+            }
+        )
+    }
+
     FireDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { attemptDismiss() },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         title = "Mover Militar",
         confirmButton = {
             FireButton(
@@ -39,7 +81,7 @@ fun MoveMilitarDialog(
             )
         },
         dismissButton = {
-            FireTextButton(onClick = onDismiss, text = "Cancelar")
+            FireTextButton(onClick = { attemptDismiss() }, text = "Cancelar")
         }
     ) {
         Column(

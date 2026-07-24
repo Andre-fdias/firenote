@@ -6,6 +6,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,13 +55,53 @@ fun AddApoioDialog(
     
     val siglaOptions = orgaosOptions.map { it.first }
     
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(selectedOrgaoSigla, viatura, encarregado, descricaoOutros) {
+        selectedOrgaoSigla.isNotEmpty() || viatura.isNotEmpty() || encarregado.isNotEmpty() || descricaoOutros.isNotEmpty()
+    }
+
+    val attemptDismiss = {
+        if (hasChanges) {
+            showConfirmCancelDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
     val isFormValid = remember(selectedOrgaoSigla, viatura, encarregado, descricaoOutros) {
         selectedOrgaoSigla.isNotBlank() &&
         (selectedOrgaoSigla != "Outros" || descricaoOutros.isNotBlank())
     }
     
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Existem alterações não salvas") },
+            text = { Text("Deseja realmente cancelar este cadastro?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onDismiss()
+                }) {
+                    Text("Descartar alterações")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar editando")
+                }
+            }
+        )
+    }
+
     FireDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { attemptDismiss() },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         title = "Solicitar / Registrar Apoio",
         confirmButton = {
             FireButton(
@@ -80,7 +122,7 @@ fun AddApoioDialog(
             )
         },
         dismissButton = {
-            FireTextButton(onClick = onDismiss, text = "Cancelar")
+            FireTextButton(onClick = { attemptDismiss() }, text = "Cancelar")
         }
     ) {
         Column(

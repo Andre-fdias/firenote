@@ -14,6 +14,9 @@ import com.example.firenotes.data.service.OcrServiceImpl
 import com.example.firenotes.domain.repository.LocationService
 import com.example.firenotes.domain.repository.OcrService
 import com.example.firenotes.domain.repository.OcorrenciaRepository
+import com.example.firenotes.domain.repository.CalendarRepository
+import com.example.firenotes.data.local.dao.CalendarDao
+import com.example.firenotes.data.repository.RoomCalendarRepository
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import dagger.Binds
@@ -67,6 +70,12 @@ abstract class AppModule {
         dataStoreSettingsRepository: com.example.firenotes.data.repository.DataStoreSettingsRepository
     ): com.example.firenotes.domain.repository.SettingsRepository
 
+    @Binds
+    @Singleton
+    abstract fun bindCalendarRepository(
+        roomCalendarRepository: RoomCalendarRepository
+    ): CalendarRepository
+
     companion object {
         private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "fire_notes_settings")
 
@@ -105,5 +114,13 @@ abstract class AppModule {
         fun provideHomeOperationalDao(database: AppDatabase): HomeOperationalDao {
             return database.homeOperationalDao()
         }
+
+        @Provides
+        @Singleton
+        fun provideCalendarDao(database: AppDatabase): CalendarDao {
+            return database.calendarDao()
+        }
     }
 }
+
+

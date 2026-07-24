@@ -447,7 +447,9 @@ data class RoomTarefa(
     val prioridade: String = "MEDIA", // Valores: ALTA, MEDIA, BAIXA
     val criadoEm: Long = System.currentTimeMillis(),
     val concluidoEm: Long? = null,
-    val hora: String? = null // Formato HH:MM
+    val hora: String? = null, // Formato HH:MM
+    val escalaId: String? = null,
+    val cor: String = "#10B981"
 )
 
 @Entity(tableName = "eventos_agenda")
@@ -458,11 +460,68 @@ data class RoomEventoAgenda(
     val data: String, // Formato YYYY-MM-DD
     val horaInicio: String?, // Formato HH:MM
     val horaFim: String?,
-    val tipo: String? = null // TipoEvento.name
+    val tipo: String? = null, // TipoEvento.name
+    val local: String? = null, // Endereço / Maps
+    val escalaId: String? = null,
+    val cor: String = "#3B82F6"
 )
 
 @Entity(tableName = "prontidao_dias")
 data class RoomProntidaoDia(
     @PrimaryKey val data: String, // Formato YYYY-MM-DD
     val escala: String
+)
+
+@Entity(
+    tableName = "subtarefas",
+    foreignKeys = [
+        ForeignKey(
+            entity = RoomTarefa::class,
+            parentColumns = ["id"],
+            childColumns = ["tarefaId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["tarefaId"])]
+)
+data class RoomSubtarefa(
+    @PrimaryKey val id: String,
+    val tarefaId: String,
+    val titulo: String,
+    val concluida: Boolean,
+    val parentId: String? = null
+)
+
+@Entity(
+    tableName = "lembretes",
+    indices = [Index(value = ["referenciaId"])]
+)
+data class RoomLembrete(
+    @PrimaryKey val id: String,
+    val referenciaId: String, // Pode ser o ID do Evento ou da Tarefa
+    val tipoReferencia: String, // "EVENTO" ou "TAREFA"
+    val minutosAntes: Int
+)
+
+data class RoomTarefaComSubtarefas(
+    @Embedded val tarefa: RoomTarefa,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "tarefaId"
+    )
+    val subtarefas: List<RoomSubtarefa>,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "referenciaId"
+    )
+    val lembretes: List<RoomLembrete>
+)
+
+data class RoomEventoComLembretes(
+    @Embedded val evento: RoomEventoAgenda,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "referenciaId"
+    )
+    val lembretes: List<RoomLembrete>
 )

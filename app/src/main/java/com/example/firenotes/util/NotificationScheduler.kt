@@ -11,15 +11,15 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 object NotificationScheduler {
-    fun schedule(context: Context, idString: String, title: String, text: String, dateStr: String, timeStr: String) {
+    fun schedule(context: Context, idString: String, title: String, text: String, dateStr: String, timeStr: String, minutosAntes: Int = 30) {
         try {
             android.util.Log.d("NotificationScheduler", "Attempting to schedule alarm for $dateStr $timeStr (Id: $idString) - 30 minutes before")
             val date = LocalDate.parse(dateStr)
             val time = LocalTime.parse(timeStr)
             val dateTime = LocalDateTime.of(date, time)
             
-            // Subtract 30 minutes for notification time
-            val alertDateTime = dateTime.minusMinutes(30)
+            // Subtract minutosAntes for notification time
+            val alertDateTime = dateTime.minusMinutes(minutosAntes.toLong())
             val triggerTimeMs = alertDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
             if (triggerTimeMs <= System.currentTimeMillis()) {
@@ -31,12 +31,12 @@ object NotificationScheduler {
             val intent = Intent(context, NotificationReceiver::class.java).apply {
                 putExtra("title", title)
                 putExtra("text", text)
-                putExtra("id", idString.hashCode())
+                putExtra("id", idString.hashCode() + minutosAntes)
             }
 
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
-                idString.hashCode(),
+                idString.hashCode() + minutosAntes,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
@@ -70,23 +70,24 @@ object NotificationScheduler {
         }
     }
 
-    fun cancel(context: Context, idString: String) {
+    fun cancel(context: Context, idString: String, lembretes: List<Int> = listOf(0, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440, 2880)) {
         try {
             android.util.Log.d("NotificationScheduler", "Cancelling alarm for Id: $idString")
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(context, NotificationReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                idString.hashCode(),
-                intent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            if (pendingIntent != null) {
-                alarmManager.cancel(pendingIntent)
-                pendingIntent.cancel()
-                android.util.Log.d("NotificationScheduler", "Alarm cancelled successfully for hash: ${idString.hashCode()}")
-            } else {
-                android.util.Log.d("NotificationScheduler", "No pending alarm found to cancel for hash: ${idString.hashCode()}")
+            
+            for (m in lembretes) {
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    idString.hashCode() + m,
+                    intent,
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+                )
+                if (pendingIntent != null) {
+                    alarmManager.cancel(pendingIntent)
+                    pendingIntent.cancel()
+                    android.util.Log.d("NotificationScheduler", "Alarm cancelled successfully for hash: ${idString.hashCode() + m}")
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("NotificationScheduler", "Erro ao cancelar alarme: ${e.message}", e)

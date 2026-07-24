@@ -45,6 +45,8 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
+    onNavigateToCalendarSettings: () -> Unit,
+    onNavigateToGoogleSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -176,7 +178,9 @@ fun SettingsScreen(
                     viewModel = viewModel,
                     showEraseConfirmDialog = showEraseConfirmDialog,
                     onShowEraseDialog = { showEraseConfirmDialog = true },
-                    onDismissEraseDialog = { showEraseConfirmDialog = false }
+                    onDismissEraseDialog = { showEraseConfirmDialog = false },
+                    onNavigateToCalendarSettings = onNavigateToCalendarSettings,
+                    onNavigateToGoogleSync = onNavigateToGoogleSync
                 )
                 1 -> SecuritySettingsTab(
                     uiState = uiState,
@@ -292,7 +296,9 @@ private fun GeneralSettingsTab(
     viewModel: SettingsViewModel,
     showEraseConfirmDialog: Boolean,
     onShowEraseDialog: () -> Unit,
-    onDismissEraseDialog: () -> Unit
+    onDismissEraseDialog: () -> Unit,
+    onNavigateToCalendarSettings: () -> Unit,
+    onNavigateToGoogleSync: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -352,6 +358,40 @@ private fun GeneralSettingsTab(
                     selectedSystem = uiState.sistemaUnidades,
                     onSystemSelected = viewModel::updateUnitSystem
                 )
+            }
+        }
+
+        // Calendário Operacional
+        item {
+            PreferenceCard(
+                title = "📅 Calendário Operacional",
+                subtitle = "Configurar escalas de plantão, equipes e turnos",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Button(
+                    onClick = onNavigateToCalendarSettings,
+                    colors = ButtonDefaults.buttonColors(containerColor = FireColors.Primary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Configurar Escalas & Equipes", color = Color.White)
+                }
+            }
+        }
+
+        // Sincronização Google Agenda
+        item {
+            PreferenceCard(
+                title = "🔌 Google Agenda Sync",
+                subtitle = "Vincular conta Google e gerenciar sincronizações",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Button(
+                    onClick = onNavigateToGoogleSync,
+                    colors = ButtonDefaults.buttonColors(containerColor = FireColors.Secondary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Configurar Sincronização Google", color = Color.White)
+                }
             }
         }
 

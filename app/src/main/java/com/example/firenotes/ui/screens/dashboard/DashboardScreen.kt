@@ -26,6 +26,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.BackHandler
+import android.app.Activity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -55,6 +57,11 @@ fun DashboardScreen(
     onNavigateToReports: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    BackHandler {
+        onNavigateBack()
+    }
+
     val uiState by viewModel.uiState.collectAsState()
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
     val customStartDate by viewModel.customStartDate.collectAsState()
@@ -117,8 +124,9 @@ private fun DashboardContent(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("📊 Geral", "🚒 Recursos", "🚛 Logística", "📍 Geografia", "✅ Qualidade")
     val context = LocalContext.current
+    val tabs = listOf("📊 Geral", "🚒 Recursos", "🚛 Logística", "📍 Geografia", "✅ Qualidade")
+
     var showCustomDateDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {

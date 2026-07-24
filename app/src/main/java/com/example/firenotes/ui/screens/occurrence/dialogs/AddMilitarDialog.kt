@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +56,31 @@ fun AddMilitarDialog(
         return input.isNotBlank() && input.length in 2..30 && input.all { it.isLetter() || it.isWhitespace() }
     }
     
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(re, nomeGuerra, graduacao, funcao, militar) {
+        if (militar != null) {
+            re != militar.re ||
+            nomeGuerra != militar.nomeGuerra ||
+            graduacao != militar.graduacao ||
+            funcao != militar.funcao
+        } else {
+            re.isNotEmpty() || nomeGuerra.isNotEmpty() || graduacao.isNotEmpty() || funcao.isNotEmpty()
+        }
+    }
+
+    val attemptDismiss = {
+        if (hasChanges) {
+            showConfirmCancelDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
     val isFormValid = remember(re, nomeGuerra, graduacao, funcao, reError, nomeError) {
         validateRe(re) &&
         validateNome(nomeGuerra) &&
@@ -63,8 +90,30 @@ fun AddMilitarDialog(
         nomeError == null
     }
     
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Existem alterações não salvas") },
+            text = { Text("Deseja realmente cancelar este cadastro?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onDismiss()
+                }) {
+                    Text("Descartar alterações")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar editando")
+                }
+            }
+        )
+    }
+
     FireDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { attemptDismiss() },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         title = if (militar == null) "Registrar Militar" else "Editar Militar",
         confirmButton = {
             FireButton(
@@ -77,7 +126,7 @@ fun AddMilitarDialog(
             )
         },
         dismissButton = {
-            FireTextButton(onClick = onDismiss, text = "Cancelar")
+            FireTextButton(onClick = { attemptDismiss() }, text = "Cancelar")
         }
     ) {
         Column(

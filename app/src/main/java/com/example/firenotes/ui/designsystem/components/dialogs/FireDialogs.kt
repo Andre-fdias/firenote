@@ -14,6 +14,7 @@ fun FireDialog(
     title: String,
     confirmButton: @Composable () -> Unit,
     dismissButton: @Composable (() -> Unit)? = null,
+    properties: androidx.compose.ui.window.DialogProperties = androidx.compose.ui.window.DialogProperties(),
     content: @Composable () -> Unit
 ) {
     AlertDialog(
@@ -22,7 +23,8 @@ fun FireDialog(
         text = content,
         confirmButton = confirmButton,
         dismissButton = dismissButton,
-        shape = FireShapes.Large
+        shape = FireShapes.Large,
+        properties = properties
     )
 }
 

@@ -5,6 +5,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -45,6 +46,39 @@ fun OccurrenceFormScreen(
     onNavigateToDocumentScanner: (String, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val attemptDismiss = {
+        // Assume there's always potential changes when leaving the form, 
+        // as tracking all granular changes in this wizard is complex.
+        showConfirmCancelDialog = true
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Descartar rascunho?") },
+            text = { Text("Deseja realmente sair? As alterações não salvas serão perdidas.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onNavigateBack()
+                }) {
+                    Text("Descartar", color = FireColors.Error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar editando")
+                }
+            }
+        )
+    }
+
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -325,7 +359,7 @@ fun OccurrenceFormScreen(
                     if (activeModule != null) {
                         autoSaveAndCloseModule()
                     } else {
-                        onNavigateBack()
+                        attemptDismiss()
                     }
                 },
                 actions = {

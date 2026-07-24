@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
@@ -126,11 +127,58 @@ fun AddVictimDialogV3(
     // ════════════════════════════════════════════════════════════════════════
     // UI — Tela completa em Dialog fullscreen
     // ════════════════════════════════════════════════════════════════════════
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(
+        selectedPessoaId, resultado, pulso, pressaoArterial, saturacaoO2, respiracao,
+        aberturaOcular, respostaVerbal, respostaMotora, lesoesTexto, lesoesEstruturadas,
+        quemSocorreu, selectedViaturaId, hospitalDestino, nomeMedico, crmMedico
+    ) {
+        selectedPessoaId != null || resultado.isNotEmpty() || pulso.isNotEmpty() ||
+        pressaoArterial.isNotEmpty() || saturacaoO2.isNotEmpty() || respiracao.isNotEmpty() ||
+        aberturaOcular != null || respostaVerbal != null || respostaMotora != null ||
+        lesoesTexto.isNotEmpty() || lesoesEstruturadas.isNotEmpty() || quemSocorreu.isNotEmpty() ||
+        selectedViaturaId != null || hospitalDestino.isNotEmpty() || nomeMedico.isNotEmpty() || crmMedico.isNotEmpty()
+    }
+
+    val attemptDismiss = {
+        if (hasChanges) {
+            showConfirmCancelDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Existem alterações não salvas") },
+            text = { Text("Deseja realmente cancelar este cadastro?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onDismiss()
+                }) {
+                    Text("Descartar alterações")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar editando")
+                }
+            }
+        )
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { attemptDismiss() },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
+            dismissOnBackPress = false,
             dismissOnClickOutside = false
         )
     ) {
@@ -146,8 +194,8 @@ fun AddVictimDialogV3(
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, "Cancelar", tint = FireColors.OnSurfaceVariant)
+                        IconButton(onClick = { attemptDismiss() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Fechar")
                         }
                     },
                     actions = {

@@ -15,6 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -245,6 +247,46 @@ fun AddVehicleDialog(
         )
     }
     
+    var showConfirmCancelDialog by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(
+        placa, modelo, cor, chassi, anoFabricacao, anoModelo, marca, versao, exercicio, selectedPessoaId, currentCrlvImageUri, veiculoParaEditar
+    ) {
+        if (veiculoParaEditar != null) {
+            val parts = veiculoParaEditar.ano.split("/")
+            val vAnoFab = veiculoParaEditar.anoFabricacao?.toString() ?: parts.getOrNull(0)?.trim() ?: ""
+            val vAnoMod = veiculoParaEditar.anoModelo?.toString() ?: parts.getOrNull(1)?.trim() ?: ""
+            
+            placa != veiculoParaEditar.placa ||
+            modelo != veiculoParaEditar.modelo ||
+            cor != veiculoParaEditar.cor ||
+            chassi != veiculoParaEditar.chassi ||
+            anoFabricacao != vAnoFab ||
+            anoModelo != vAnoMod ||
+            marca != veiculoParaEditar.marca ||
+            versao != veiculoParaEditar.versao ||
+            exercicio != veiculoParaEditar.exercicio ||
+            selectedPessoaId != veiculoParaEditar.proprietarioId ||
+            currentCrlvImageUri != (if (!veiculoParaEditar.urlCrlv.isNullOrBlank()) Uri.parse(veiculoParaEditar.urlCrlv) else null)
+        } else {
+            placa.isNotEmpty() || modelo.isNotEmpty() || cor.isNotEmpty() || chassi.isNotEmpty() ||
+            anoFabricacao.isNotEmpty() || anoModelo.isNotEmpty() || marca.isNotEmpty() ||
+            versao.isNotEmpty() || exercicio.isNotEmpty() || selectedPessoaId != null || currentCrlvImageUri != null
+        }
+    }
+
+    val attemptDismiss = {
+        if (hasChanges) {
+            showConfirmCancelDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler {
+        attemptDismiss()
+    }
+
     val isFormValid = remember(placa, modelo, cor, chassi, placaError) {
         placa.isNotBlank() &&
         validatePlaca(placa) &&
@@ -279,8 +321,30 @@ fun AddVehicleDialog(
         offline.filter { it.contains(searchModelo, ignoreCase = true) }
     }
     
+    if (showConfirmCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmCancelDialog = false },
+            title = { Text("Existem alterações não salvas") },
+            text = { Text("Deseja realmente cancelar este cadastro?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmCancelDialog = false
+                    onDismiss()
+                }) {
+                    Text("Descartar alterações")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmCancelDialog = false }) {
+                    Text("Continuar editando")
+                }
+            }
+        )
+    }
+
     FireDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { attemptDismiss() },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         title = if (veiculoParaEditar != null) "Editar Veículo" else "Registrar Veículo",
         confirmButton = {
             FireButton(
@@ -312,7 +376,7 @@ fun AddVehicleDialog(
             )
         },
         dismissButton = {
-            FireTextButton(onClick = onDismiss, text = "Cancelar")
+            FireTextButton(onClick = { attemptDismiss() }, text = "Cancelar")
         }
     ) {
         Column(

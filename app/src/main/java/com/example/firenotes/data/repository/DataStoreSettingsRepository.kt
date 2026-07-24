@@ -17,6 +17,7 @@ class DataStoreSettingsRepository @Inject constructor(
         val KEY_THEME = stringPreferencesKey("theme")
         val KEY_PIN_ENABLED = booleanPreferencesKey("pin_enabled")
         val KEY_PIN_CODE = stringPreferencesKey("pin_code")
+        val KEY_ACTIVE_CALENDAR_FILTER = stringPreferencesKey("active_calendar_filter")
         val KEY_BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
         
 
@@ -36,6 +37,10 @@ class DataStoreSettingsRepository @Inject constructor(
 
     override val pinCodeFlow: Flow<String> = dataStore.data.map { preferences ->
         preferences[KEY_PIN_CODE] ?: ""
+    }
+
+    override val activeCalendarFilterFlow: Flow<String> = dataStore.data.map { preferences ->
+        preferences[KEY_ACTIVE_CALENDAR_FILTER] ?: "Todos"
     }
 
     override val biometricEnabledFlow: Flow<Boolean> = dataStore.data.map { preferences ->
@@ -71,6 +76,12 @@ class DataStoreSettingsRepository @Inject constructor(
     override suspend fun setPinCode(pin: String) {
         dataStore.edit { preferences ->
             preferences[KEY_PIN_CODE] = pin
+        }
+    }
+
+    override suspend fun setActiveCalendarFilter(filter: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_ACTIVE_CALENDAR_FILTER] = filter
         }
     }
 

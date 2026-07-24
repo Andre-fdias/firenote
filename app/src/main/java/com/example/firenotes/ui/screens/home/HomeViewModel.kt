@@ -8,10 +8,18 @@ import com.example.firenotes.domain.model.Ocorrencia
 import com.example.firenotes.domain.repository.OcorrenciaRepository
 import com.example.firenotes.domain.repository.LocationService
 import com.example.firenotes.domain.repository.SettingsRepository
+import com.example.firenotes.domain.repository.CalendarRepository
+import com.example.firenotes.domain.model.EscalaConfig
+import com.example.firenotes.domain.model.EquipeConfig
+import com.example.firenotes.domain.calendar.ScaleEngine
 import com.example.firenotes.data.local.dao.HomeOperationalDao
 import com.example.firenotes.data.local.entities.RoomTarefa
+import com.example.firenotes.data.local.entities.RoomTarefaComSubtarefas
 import com.example.firenotes.data.local.entities.RoomEventoAgenda
+import com.example.firenotes.data.local.entities.RoomEventoComLembretes
 import com.example.firenotes.data.local.entities.RoomProntidaoDia
+import com.example.firenotes.domain.model.SubtarefaInput
+import com.example.firenotes.data.local.entities.RoomSubtarefa
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +54,7 @@ class HomeViewModel @Inject constructor(
     private val backupService: com.example.firenotes.data.service.BackupService,
     private val googleDriveBackupService: com.example.firenotes.data.service.GoogleDriveBackupService,
     private val homeOperationalDao: HomeOperationalDao,
+    private val calendarRepository: CalendarRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -66,6 +75,23 @@ class HomeViewModel @Inject constructor(
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     // ============================================
+
+    private val _selectedEscalaFilter = MutableStateFlow<String?>(null) // null = Todas, "NONE" = Nenhuma
+    val selectedEscalaFilter: StateFlow<String?> = _selectedEscalaFilter.asStateFlow()
+
+    private val _availableEscalas = MutableStateFlow<List<EscalaConfig>>(emptyList())
+    val availableEscalas: StateFlow<List<EscalaConfig>> = _availableEscalas.asStateFlow()
+
+    private val _previewDays = MutableStateFlow<Map<LocalDate, Map<Int, List<EquipeConfig>>>>(emptyMap())
+    val previewDays: StateFlow<Map<LocalDate, Map<Int, List<EquipeConfig>>>> = _previewDays.asStateFlow()
+
+    fun setEscalaFilter(filter: String?) {
+        viewModelScope.launch {
+            settingsRepository.setActiveCalendarFilter(filter ?: "Todos")
+        }
+    }
+
+
     // UI STATES - CALENDÁRIO
     // ============================================
 
@@ -79,11 +105,11 @@ class HomeViewModel @Inject constructor(
     // UI STATES - DADOS LOCAIS (TAREFAS, EVENTOS, PRONTIDÃO)
     // ============================================
 
-    private val _allTarefas = MutableStateFlow<List<RoomTarefa>>(emptyList())
-    val allTarefas: StateFlow<List<RoomTarefa>> = _allTarefas.asStateFlow()
+    private val _allTarefas = MutableStateFlow<List<RoomTarefaComSubtarefas>>(emptyList())
+    val allTarefas: StateFlow<List<RoomTarefaComSubtarefas>> = _allTarefas.asStateFlow()
 
-    private val _allEventos = MutableStateFlow<List<RoomEventoAgenda>>(emptyList())
-    val allEventos: StateFlow<List<RoomEventoAgenda>> = _allEventos.asStateFlow()
+    private val _allEventos = MutableStateFlow<List<RoomEventoComLembretes>>(emptyList())
+    val allEventos: StateFlow<List<RoomEventoComLembretes>> = _allEventos.asStateFlow()
 
     private val _allProntidoes = MutableStateFlow<List<RoomProntidaoDia>>(emptyList())
     val allProntidoes: StateFlow<List<RoomProntidaoDia>> = _allProntidoes.asStateFlow()
@@ -108,6 +134,32 @@ class HomeViewModel @Inject constructor(
         triggerAutoBackups()
         observeHomeData()
         fetchCity()
+        
+        viewModelScope.launch {
+            settingsRepository.activeCalendarFilterFlow.collect { filter ->
+                _selectedEscalaFilter.value = if (filter == "Todos") null else filter
+            }
+        }
+
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(
+                _selectedEscalaFilter,
+                _currentMonth,
+                calendarRepository.getEscalasFlow(),
+                calendarRepository.getEquipesFlow()
+            ) { filter, month, scales, teams ->
+                _availableEscalas.value = scales
+                if (filter == "NONE") {
+                    emptyMap()
+                } else {
+                    val filteredScales = if (filter == null) scales else scales.filter { it.id == filter }
+                    val filteredTeams = if (filter == null) teams else teams.filter { it.escalaId == filter }
+                    ScaleEngine.getPrecomputedMonthScales(month, filteredScales, filteredTeams)
+                }
+            }.collect {
+                _previewDays.value = it
+            }
+        }
     }
 
     fun fetchCity() {
@@ -193,7 +245,11 @@ class HomeViewModel @Inject constructor(
         descricao: String? = null,
         prioridade: Prioridade = Prioridade.MEDIA,
         categoria: String = "Operacional",
-        hora: String? = null
+        hora: String? = null,
+        lembretesMinutos: List<Int> = emptyList(),
+        subtarefas: List<SubtarefaInput> = emptyList(),
+        escalaId: String? = null,
+        corHex: String = "#10B981"
     ) {
         if (titulo.isBlank()) {
             Log.w(TAG, "⚠️ Tentativa de adicionar tarefa com título vazio")
@@ -212,18 +268,42 @@ class HomeViewModel @Inject constructor(
                     prioridade = prioridade.name,
                     criadoEm = System.currentTimeMillis(),
                     concluidoEm = null,
-                    hora = hora
+                    hora = hora,
+                    escalaId = escalaId,
+                    cor = corHex
                 )
                 homeOperationalDao.insertTarefa(novaTarefa)
+                
+                if (subtarefas.isNotEmpty()) {
+                    val roomSubtarefas = resolveParentIds(subtarefas, novaTarefa.id)
+                    homeOperationalDao.insertSubtarefas(roomSubtarefas)
+                }
+
+                if (lembretesMinutos.isNotEmpty()) {
+                    val roomLembretes = lembretesMinutos.map { min ->
+                        com.example.firenotes.data.local.entities.RoomLembrete(
+                            id = UUID.randomUUID().toString(),
+                            referenciaId = novaTarefa.id,
+                            tipoReferencia = "TAREFA",
+                            minutosAntes = min
+                        )
+                    }
+                    homeOperationalDao.insertLembretes(roomLembretes)
+                }
+
                 if (novaTarefa.hora != null) {
-                    com.example.firenotes.util.NotificationScheduler.schedule(
-                        context,
-                        novaTarefa.id,
-                        "Tarefa Agendada",
-                        "${novaTarefa.titulo} (${novaTarefa.categoria})",
-                        novaTarefa.data,
-                        novaTarefa.hora
-                    )
+                    val lembretesParaAgendar = if (lembretesMinutos.isEmpty()) listOf(0) else lembretesMinutos
+                    lembretesParaAgendar.forEach { min ->
+                        com.example.firenotes.util.NotificationScheduler.schedule(
+                            context,
+                            novaTarefa.id,
+                            "Tarefa Agendada",
+                            "${novaTarefa.titulo} (${novaTarefa.categoria})",
+                            novaTarefa.data,
+                            novaTarefa.hora,
+                            min
+                        )
+                    }
                 }
                 Log.d(TAG, "✅ Tarefa adicionada: ${novaTarefa.titulo}")
             } catch (e: Exception) {
@@ -281,7 +361,11 @@ class HomeViewModel @Inject constructor(
         data: LocalDate,
         horaInicio: String?,
         horaFim: String?,
-        tipo: com.example.firenotes.ui.screens.agenda.TipoEvento? = null
+        tipo: com.example.firenotes.domain.model.TipoEvento? = null,
+        local: String? = null,
+        lembretesMinutos: List<Int> = emptyList(),
+        escalaId: String? = null,
+        corHex: String = "#3B82F6"
     ) {
         if (titulo.isBlank()) {
             Log.w(TAG, "⚠️ Tentativa de adicionar evento com título vazio")
@@ -297,18 +381,37 @@ class HomeViewModel @Inject constructor(
                     data = data.toString(),
                     horaInicio = horaInicio,
                     horaFim = horaFim,
-                    tipo = tipo?.name
+                    tipo = tipo?.name,
+                    local = local,
+                    escalaId = escalaId,
+                    cor = corHex
                 )
                 homeOperationalDao.insertEvento(novoEvento)
+                
+                if (lembretesMinutos.isNotEmpty()) {
+                    val roomLembretes = lembretesMinutos.map { min ->
+                        com.example.firenotes.data.local.entities.RoomLembrete(
+                            id = UUID.randomUUID().toString(),
+                            referenciaId = novoEvento.id,
+                            tipoReferencia = "EVENTO",
+                            minutosAntes = min
+                        )
+                    }
+                    homeOperationalDao.insertLembretes(roomLembretes)
+                }
                 if (novoEvento.horaInicio != null) {
-                    com.example.firenotes.util.NotificationScheduler.schedule(
-                        context,
-                        novoEvento.id,
-                        "Evento Agendado",
-                        "${novoEvento.titulo} (Inicio: ${novoEvento.horaInicio})",
-                        novoEvento.data,
-                        novoEvento.horaInicio
-                    )
+                    val lembretesParaAgendar = if (lembretesMinutos.isEmpty()) listOf(0) else lembretesMinutos
+                    lembretesParaAgendar.forEach { min ->
+                        com.example.firenotes.util.NotificationScheduler.schedule(
+                            context,
+                            novoEvento.id,
+                            "Evento Agendado",
+                            "${novoEvento.titulo} (Inicio: ${novoEvento.horaInicio})",
+                            novoEvento.data,
+                            novoEvento.horaInicio,
+                            min
+                        )
+                    }
                 }
                 Log.d(TAG, "✅ Evento adicionado: ${novoEvento.titulo}")
             } catch (e: Exception) {
@@ -317,20 +420,47 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun updateTarefa(tarefa: com.example.firenotes.data.local.entities.RoomTarefa) {
+    fun updateTarefa(
+        tarefa: com.example.firenotes.data.local.entities.RoomTarefa,
+        lembretesMinutos: List<Int> = emptyList(),
+        subtarefas: List<SubtarefaInput> = emptyList()
+    ) {
         viewModelScope.launch {
             try {
                 homeOperationalDao.updateTarefa(tarefa)
+                
+                homeOperationalDao.deleteSubtarefasByTarefa(tarefa.id)
+                if (subtarefas.isNotEmpty()) {
+                    val roomSubtarefas = resolveParentIds(subtarefas, tarefa.id)
+                    homeOperationalDao.insertSubtarefas(roomSubtarefas)
+                }
+
+                homeOperationalDao.deleteLembretesByReferencia(tarefa.id)
+                if (lembretesMinutos.isNotEmpty()) {
+                    val roomLembretes = lembretesMinutos.map { min ->
+                        com.example.firenotes.data.local.entities.RoomLembrete(
+                            id = UUID.randomUUID().toString(),
+                            referenciaId = tarefa.id,
+                            tipoReferencia = "TAREFA",
+                            minutosAntes = min
+                        )
+                    }
+                    homeOperationalDao.insertLembretes(roomLembretes)
+                }
                 com.example.firenotes.util.NotificationScheduler.cancel(context, tarefa.id)
                 if (!tarefa.concluida && tarefa.hora != null) {
-                    com.example.firenotes.util.NotificationScheduler.schedule(
-                        context,
-                        tarefa.id,
-                        "Tarefa Agendada",
-                        "${tarefa.titulo} (${tarefa.categoria})",
-                        tarefa.data,
-                        tarefa.hora
-                    )
+                    val lembretesParaAgendar = if (lembretesMinutos.isEmpty()) listOf(0) else lembretesMinutos
+                    lembretesParaAgendar.forEach { min ->
+                        com.example.firenotes.util.NotificationScheduler.schedule(
+                            context,
+                            tarefa.id,
+                            "Tarefa Agendada",
+                            "${tarefa.titulo} (${tarefa.categoria})",
+                            tarefa.data,
+                            tarefa.hora,
+                            min
+                        )
+                    }
                 }
                 Log.d(TAG, "✅ Tarefa atualizada: ${tarefa.titulo}")
             } catch (e: Exception) {
@@ -339,20 +469,40 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun updateEvento(evento: com.example.firenotes.data.local.entities.RoomEventoAgenda) {
+    fun updateEvento(
+        evento: com.example.firenotes.data.local.entities.RoomEventoAgenda,
+        lembretesMinutos: List<Int> = emptyList()
+    ) {
         viewModelScope.launch {
             try {
                 homeOperationalDao.updateEvento(evento)
+                
+                homeOperationalDao.deleteLembretesByReferencia(evento.id)
+                if (lembretesMinutos.isNotEmpty()) {
+                    val roomLembretes = lembretesMinutos.map { min ->
+                        com.example.firenotes.data.local.entities.RoomLembrete(
+                            id = UUID.randomUUID().toString(),
+                            referenciaId = evento.id,
+                            tipoReferencia = "EVENTO",
+                            minutosAntes = min
+                        )
+                    }
+                    homeOperationalDao.insertLembretes(roomLembretes)
+                }
                 com.example.firenotes.util.NotificationScheduler.cancel(context, evento.id)
                 if (evento.horaInicio != null) {
-                    com.example.firenotes.util.NotificationScheduler.schedule(
-                        context,
-                        evento.id,
-                        "Evento Agendado",
-                        "${evento.titulo} (Inicio: ${evento.horaInicio})",
-                        evento.data,
-                        evento.horaInicio
-                    )
+                    val lembretesParaAgendar = if (lembretesMinutos.isEmpty()) listOf(0) else lembretesMinutos
+                    lembretesParaAgendar.forEach { min ->
+                        com.example.firenotes.util.NotificationScheduler.schedule(
+                            context,
+                            evento.id,
+                            "Evento Agendado",
+                            "${evento.titulo} (Inicio: ${evento.horaInicio})",
+                            evento.data,
+                            evento.horaInicio,
+                            min
+                        )
+                    }
                 }
                 Log.d(TAG, "✅ Evento atualizado: ${evento.titulo}")
             } catch (e: Exception) {
@@ -391,6 +541,15 @@ class HomeViewModel @Inject constructor(
     // ============================================
     // REFRESH
     // ============================================
+
+    suspend fun getSubtarefasByTarefa(tarefaId: String): List<RoomSubtarefa> {
+        return homeOperationalDao.getSubtarefasByTarefa(tarefaId)
+    }
+
+    suspend fun getLembretesByReferencia(referenciaId: String): List<Int> {
+        return homeOperationalDao.getLembretesByReferencia(referenciaId)
+            .map { it.minutosAntes }
+    }
 
     fun refreshAll() {
         Log.d(TAG, "🔄 Refreshing all data...")
@@ -491,6 +650,56 @@ class HomeViewModel @Inject constructor(
                 Log.e("HomeVM", "Erro ao duplicar ocorrência: ${it.message}", it)
             }
         }
+    }
+
+    fun toggleSubtarefa(subtarefa: RoomSubtarefa) {
+        viewModelScope.launch {
+            try {
+                val updated = subtarefa.copy(concluida = !subtarefa.concluida)
+                homeOperationalDao.updateSubtarefa(updated)
+            } catch (e: Exception) {
+                Log.e("HomeVM", "Erro ao toggle subtarefa: ${e.message}", e)
+            }
+        }
+    }
+
+    fun updateSubtarefaTitle(subtarefa: RoomSubtarefa, newTitle: String) {
+        viewModelScope.launch {
+            try {
+                val updated = subtarefa.copy(titulo = newTitle)
+                homeOperationalDao.updateSubtarefa(updated)
+            } catch (e: Exception) {
+                Log.e("HomeVM", "Erro ao atualizar titulo subtarefa: ${e.message}", e)
+            }
+        }
+    }
+
+    fun deleteSubtarefa(subtarefa: RoomSubtarefa) {
+        viewModelScope.launch {
+            try {
+                homeOperationalDao.deleteSubtarefa(subtarefa)
+            } catch (e: Exception) {
+                Log.e("HomeVM", "Erro ao deletar subtarefa: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun resolveParentIds(inputs: List<SubtarefaInput>, tarefaId: String): List<RoomSubtarefa> {
+        val result = mutableListOf<RoomSubtarefa>()
+        val activeParents = mutableMapOf<Int, String>()
+        inputs.forEach { input ->
+            val parentId = if (input.level > 0) activeParents[input.level - 1] else null
+            val roomSub = RoomSubtarefa(
+                id = input.id,
+                tarefaId = tarefaId,
+                titulo = input.titulo,
+                concluida = input.concluida,
+                parentId = parentId
+            )
+            result.add(roomSub)
+            activeParents[input.level] = input.id
+        }
+        return result
     }
 
     // ============================================
